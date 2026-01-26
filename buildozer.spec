@@ -32,7 +32,7 @@ version = 1.0
 
 # (list) Application requirements
 # comma separated e.g. requirements = sqlite3,kivy
-requirements = python3,kivy,opencv,mediapipe,plyer,numpy,pillow,scikit-learn,gtts,sh,requests,arabic-reshaper,python-bidi
+requirements = python3,kivy,opencv,mediapipe,plyer,numpy,pillow,scikit-learn,gtts,sh,requests
 
 # (str) python-for-android fork to use (default is kivy)
 # p4a.fork = kivy

@@ -51,8 +51,15 @@ from speech_to_gesture import create_speech_recognizer
 from gesture_display_utils import get_gesture_image
 from gesture_display_utils import get_gesture_image
 from speech_to_image_model import SpeechToImageModel # Module IA/Web
-import arabic_reshaper
-from bidi.algorithm import get_display
+
+# Optional imports for Arabic text support (may fail on some Android builds)
+try:
+    import arabic_reshaper
+    from bidi.algorithm import get_display
+    ARABIC_SUPPORT = True
+except ImportError:
+    ARABIC_SUPPORT = False
+    print("[WARNING] Arabic text rendering libraries not available")
 
 
 # Helper function pour obtenir le chemin des fichiers sur Android
@@ -220,20 +227,20 @@ class HandGestureApp(App):
 
         # 2. Modern Action Buttons
         self.buttons_layout = BoxLayout(orientation='horizontal', size_hint=(1, None), height=dp(50), spacing=dp(10))
-        self.clear_btn = self._create_modern_button("🗑️ Effacer", (0.95, 0.27, 0.33, 1), self.clear_phrase)
+        self.clear_btn = self._create_modern_button("Effacer", (0.95, 0.27, 0.33, 1), self.clear_phrase)
         self.buttons_layout.add_widget(self.clear_btn)
-        self.speak_btn = self._create_modern_button("🔊 Parler", (0.26, 0.67, 0.45, 1), self.speak_phrase)
+        self.speak_btn = self._create_modern_button("Parler", (0.26, 0.67, 0.45, 1), self.speak_phrase)
         self.buttons_layout.add_widget(self.speak_btn)
-        self.delete_btn = self._create_modern_button("⬅️ Retour", (0.95, 0.61, 0.27, 1), self.delete_last_letter)
+        self.delete_btn = self._create_modern_button("Retour", (0.95, 0.61, 0.27, 1), self.delete_last_letter)
         self.buttons_layout.add_widget(self.delete_btn)
-        self.space_btn = self._create_modern_button("␣ Espace", (0.27, 0.54, 0.95, 1), self.add_space)
+        self.space_btn = self._create_modern_button("Espace", (0.27, 0.54, 0.95, 1), self.add_space)
         self.buttons_layout.add_widget(self.space_btn)
 
         # 3. Mode Selector
         self.mode_selector = BoxLayout(orientation='horizontal', size_hint=(1, None), height=dp(45), spacing=dp(10))
-        self.letters_mode_btn = self._create_modern_button("🔤 LETTRES", (0.5, 0.5, 0.5, 1), self.set_letters_mode, size_hint=(0.5, 1))
+        self.letters_mode_btn = self._create_modern_button("LETTRES", (0.5, 0.5, 0.5, 1), self.set_letters_mode, size_hint=(0.5, 1))
         self.mode_selector.add_widget(self.letters_mode_btn)
-        self.words_mode_btn = self._create_modern_button("📝 MOTS", (0.26, 0.67, 0.45, 1), self.set_words_mode, size_hint=(0.5, 1))
+        self.words_mode_btn = self._create_modern_button("MOTS", (0.26, 0.67, 0.45, 1), self.set_words_mode, size_hint=(0.5, 1))
         self.mode_selector.add_widget(self.words_mode_btn)
 
         # 4. Simulation
@@ -247,16 +254,16 @@ class HandGestureApp(App):
         # 5. Langues
         self.lang_layout = BoxLayout(orientation='horizontal', size_hint=(1, None), height=dp(45), spacing=dp(10))
         # Utiliser Arial pour le bouton Arabe aussi
-        btn_ar = self._create_lang_button("🇦🇪 العربية", (0.5, 0.4, 0.85, 1), lambda x: self.change_language('ar'))
+        btn_ar = self._create_lang_button("العربية", (0.5, 0.4, 0.85, 1), lambda x: self.change_language('ar'))
         btn_ar.font_name = 'Arial'
-        btn_ar.text = self.fix_text("🇦🇪 العربية")
+        btn_ar.text = self.fix_text("العربية")
         self.lang_layout.add_widget(btn_ar)
-        self.lang_layout.add_widget(self._create_lang_button("🇫🇷 FR", (0.4, 0.6, 0.95, 1), lambda x: self.change_language('fr')))
-        self.lang_layout.add_widget(self._create_lang_button("🇬🇧 EN", (0.95, 0.5, 0.5, 1), lambda x: self.change_language('en')))
+        self.lang_layout.add_widget(self._create_lang_button("FR", (0.4, 0.6, 0.95, 1), lambda x: self.change_language('fr')))
+        self.lang_layout.add_widget(self._create_lang_button("EN", (0.95, 0.5, 0.5, 1), lambda x: self.change_language('en')))
 
         # 6. Micro
         self.voice_layout = BoxLayout(orientation='horizontal', size_hint=(1, None), height=dp(50), spacing=dp(10))
-        self.micro_btn = self._create_modern_button("🎤 MICRO", (0.6, 0.3, 0.9, 1), self.start_voice_recognition, size_hint=(1, 1))
+        self.micro_btn = self._create_modern_button("MICRO", (0.6, 0.3, 0.9, 1), self.start_voice_recognition, size_hint=(1, 1))
         self.voice_layout.add_widget(self.micro_btn)
 
         # 7. ESP32
@@ -265,7 +272,7 @@ class HandGestureApp(App):
                                 background_color=(0.15, 0.18, 0.25, 1), foreground_color=(1, 1, 1, 1), padding=[dp(12), dp(8)])
         self.esp_layout.add_widget(self.ip_input)
         self.esp_layout.add_widget(self._create_modern_button("Camera", (0.26, 0.67, 0.45, 1), self.use_phone_camera, size_hint=(0.3, 1)))
-        self.esp_layout.add_widget(self._create_modern_button("📡 ESP32", (0.2, 0.7, 0.9, 1), self.connect_esp32, size_hint=(0.3, 1)))
+        self.esp_layout.add_widget(self._create_modern_button("ESP32", (0.2, 0.7, 0.9, 1), self.connect_esp32, size_hint=(0.3, 1)))
 
         # === ASSEMBLAGE FINAL - TOUS LES BOUTONS EN HAUT ===
         self.main_layout.add_widget(self.buttons_layout)  # 1. Contrôles action
@@ -869,6 +876,8 @@ class HandGestureApp(App):
         """Corrige l'affichage du texte arabe (ligatures + RTL)"""
         if not text:
             return ""
+        if not ARABIC_SUPPORT:
+            return text  # Return as-is if libraries unavailable
         try:
             reshaped_text = arabic_reshaper.reshape(text)
             bidi_text = get_display(reshaped_text)
