@@ -253,32 +253,84 @@ class _HandGestureHomeState extends State<HandGestureHome> {
   // --- Actions ---
 
   // --- Translation Data ---
-  final Map<String, Map<String, String>> _translations = {
-    "LETTRES": {
-      "A": {"Français": "A", "Anglais": "A", "Arabe": "أ"},
-      "B": {"Français": "B", "Anglais": "B", "Arabe": "ب"},
-      // ... Ajoutez le reste si nécessaire
-    },
-    "MOTS": {
-      "Bonjour": {"Français": "Bonjour", "Anglais": "Hello", "Arabe": "مرحبا"},
-      "Merci": {"Français": "Merci", "Anglais": "Thank you", "Arabe": "شكرا"},
-      "Maison": {"Français": "Maison", "Anglais": "House", "Arabe": "منزل"},
-    }
+  final Map<String, Map<String, String>> _translationsLetters = {
+    "A": {"Français": "A", "Anglais": "A", "Arabe": "أ"},
+    "B": {"Français": "B", "Anglais": "B", "Arabe": "ب"},
+    "C": {"Français": "C", "Anglais": "C", "Arabe": "ث"},
+    "D": {"Français": "D", "Anglais": "D", "Arabe": "د"},
+    "E": {"Français": "E", "Anglais": "E", "Arabe": "إ"},
+    "F": {"Français": "F", "Anglais": "F", "Arabe": "ف"},
+    "G": {"Français": "G", "Anglais": "G", "Arabe": "ج"},
+    "H": {"Français": "H", "Anglais": "H", "Arabe": "ه"},
+    "I": {"Français": "I", "Anglais": "I", "Arabe": "ي"},
+    "J": {"Français": "J", "Anglais": "J", "Arabe": "ج"},
+    "K": {"Français": "K", "Anglais": "K", "Arabe": "ك"},
+    "L": {"Français": "L", "Anglais": "L", "Arabe": "ل"},
+    "M": {"Français": "M", "Anglais": "M", "Arabe": "م"},
+    "N": {"Français": "N", "Anglais": "N", "Arabe": "ن"},
+    "O": {"Français": "O", "Anglais": "O", "Arabe": "و"},
+    "P": {"Français": "P", "Anglais": "P", "Arabe": "ب"},
+    "Q": {"Français": "Q", "Anglais": "Q", "Arabe": "ق"},
+    "R": {"Français": "R", "Anglais": "R", "Arabe": "ر"},
+    "S": {"Français": "S", "Anglais": "S", "Arabe": "س"},
+    "T": {"Français": "T", "Anglais": "T", "Arabe": "ت"},
+    "U": {"Français": "U", "Anglais": "U", "Arabe": "و"},
+    "V": {"Français": "V", "Anglais": "V", "Arabe": "ف"},
+    "W": {"Français": "W", "Anglais": "W", "Arabe": "و"},
+    "X": {"Français": "X", "Anglais": "X", "Arabe": "كس"},
+    "Y": {"Français": "Y", "Anglais": "Y", "Arabe": "ي"},
+    "Z": {"Français": "Z", "Anglais": "Z", "Arabe": "ز"},
+  };
+
+  final Map<String, Map<String, String>> _translationsWords = {
+    "BONJOUR": {"Français": "Bonjour", "Anglais": "Hello", "Arabe": "مرحبا"},
+    "MERCI": {"Français": "Merci", "Anglais": "Thank you", "Arabe": "شكرا"},
+    "MAISON": {"Français": "Maison", "Anglais": "House", "Arabe": "منزل"},
+    "FAMILLE": {"Français": "Famille", "Anglais": "Family", "Arabe": "عائلة"},
+    "OUI": {"Français": "Oui", "Anglais": "Yes", "Arabe": "نعم"},
+    "NON": {"Français": "Non", "Anglais": "No", "Arabe": "لا"},
+    "S'IL VOUS PLAÎT": {"Français": "S'il vous plaît", "Anglais": "Please", "Arabe": "من فضلك"},
   };
 
   void _translatePhrase(String newLang) {
-    // Cette fonction simule une traduction simple basée sur les mots détectés
-    // Pour un vrai projet, on utiliserait une API de traduction.
+    String oldLang = _selectedLanguage;
     setState(() {
       _selectedLanguage = newLang;
-      // Simulation simple: on garde la phrase ou on la change si c'est un mot connu
-      _translations["MOTS"].forEach((key, value) {
-        if (phrase.contains(value["Français"]!) || phrase.contains(value["Anglais"]!) || phrase.contains(value["Arabe"]!)) {
-           phrase = value[newLang]!;
+      if (phrase.isEmpty) return;
+
+      if (currentMode == "LETTRES") {
+        // Traduction caractère par caractère
+        String newPhrase = "";
+        for (int i = 0; i < phrase.length; i++) {
+          String char = phrase[i];
+          bool found = false;
+          _translationsLetters.forEach((key, value) {
+            if (value[oldLang] == char) {
+              newPhrase += value[newLang]!;
+              found = true;
+            }
+          });
+          if (!found) newPhrase += char;
         }
-      });
+        phrase = newPhrase;
+      } else {
+        // Traduction mot par mot
+        List<String> words = phrase.split(" ");
+        List<String> translatedWords = [];
+        for (String word in words) {
+          String translated = word;
+          _translationsWords.forEach((key, value) {
+            if (value[oldLang]?.toLowerCase() == word.toLowerCase()) {
+              translated = value[newLang]!;
+            }
+          });
+          translatedWords.add(translated);
+        }
+        phrase = translatedWords.join(" ");
+      }
     });
   }
+
 
   // ... (existing initState, _initCamera)
 
@@ -356,14 +408,23 @@ class _HandGestureHomeState extends State<HandGestureHome> {
                       scrollDirection: Axis.horizontal,
                       itemCount: phrase.length,
                       itemBuilder: (context, index) {
-                        String char = phrase[index].toUpperCase();
+                        String char = phrase[index];
                         if (char == " ") return const SizedBox(width: 10);
+                        
+                        // Trouver la clé originale (A, B, C...) pour l'image
+                        String imgKey = char.toUpperCase();
+                        _translationsLetters.forEach((key, value) {
+                          if (value["Arabe"] == char || value["Français"] == char || value["Anglais"] == char) {
+                            imgKey = key;
+                          }
+                        });
+
                         return Padding(
                           padding: const EdgeInsets.only(right: 4),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(4),
                             child: Image.asset(
-                              'assets/gestures/${char}_0.jpg',
+                              'assets/gestures/${imgKey}_0.jpg',
                               width: 30,
                               height: 30,
                               fit: BoxFit.cover,
@@ -374,6 +435,7 @@ class _HandGestureHomeState extends State<HandGestureHome> {
                       },
                     ),
                   ),
+
                 ],
               ),
             ),
