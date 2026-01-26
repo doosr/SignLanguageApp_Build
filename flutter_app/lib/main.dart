@@ -291,15 +291,16 @@ class _HandGestureHomeState extends State<HandGestureHome> {
     return Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 2), child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: color, padding: EdgeInsets.zero), onPressed: onPressed, child: Text(label, style: const TextStyle(color: Colors.white, fontSize: 12)))));
   }
 
-  Widget _buildModeBtn(String mode) {
+  Widget _buildModeBtn(String emoji, String mode) {
     bool sel = currentMode == mode;
-    return Expanded(child: GestureDetector(onTap: () => setState(() => currentMode = mode), child: Container(padding: const EdgeInsets.symmetric(vertical: 10), decoration: BoxDecoration(color: sel ? Colors.green : Colors.grey[800]), child: Center(child: Text(mode, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold))))));
+    return Expanded(child: GestureDetector(onTap: () => setState(() => currentMode = mode), child: Container(padding: const EdgeInsets.symmetric(vertical: 10), decoration: BoxDecoration(color: sel ? Colors.green : Colors.grey[800]), child: Center(child: Text(emoji, style: const TextStyle(fontSize: 22))))));
   }
 
-  Widget _buildLangToggle(String lang) {
+  Widget _buildLangToggle(String flag, String lang) {
     bool sel = _selectedLanguage == lang;
-    return GestureDetector(onTap: () => _translatePhrase(lang), child: Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6), decoration: BoxDecoration(color: sel ? Colors.cyan : Colors.white10, borderRadius: BorderRadius.circular(20)), child: Text(lang, style: TextStyle(color: sel ? Colors.black : Colors.white70, fontSize: 12, fontWeight: FontWeight.bold))));
+    return GestureDetector(onTap: () => _translatePhrase(lang), child: Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6), decoration: BoxDecoration(color: sel ? Colors.cyan : Colors.white10, borderRadius: BorderRadius.circular(20)), child: Text(flag, style: const TextStyle(fontSize: 24))));
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -308,17 +309,39 @@ class _HandGestureHomeState extends State<HandGestureHome> {
       body: SafeArea(
         child: Column(
           children: [
-            Padding(padding: const EdgeInsets.all(8), child: Row(children: [_buildControlBtn("Clear", Colors.red, _clear), _buildControlBtn("Speak", Colors.green, _speak), _buildControlBtn("Back", Colors.orange, _backspace), _buildControlBtn("Space", Colors.blue, _addSpace)])),
+            // 1. Contrôles avec Emojis
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12.0),
-              child: Column(
+              padding: const EdgeInsets.all(8), 
+              child: Row(
                 children: [
-                  Row(children: [_buildModeBtn("LETTRES"), _buildModeBtn("MOTS")]),
-                  const SizedBox(height: 8),
-                  Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [_buildLangToggle("Arabe"), _buildLangToggle("Français"), _buildLangToggle("Anglais")]),
-                ],
-              ),
+                   _buildControlBtn("🗑️", Colors.red, _clear), // Clear
+                   _buildControlBtn("🔊", Colors.green, _speak), // Speak
+                   _buildControlBtn("⬅️", Colors.orange, _backspace), // Back
+                   _buildControlBtn("⌨️", Colors.blue, _addSpace), // Space
+                ]
+              )
             ),
+            
+            // 2. Modes avec Emojis
+            Row(
+              children: [
+                _buildModeBtn("🔤", "LETTRES"), // Mode Lettres
+                _buildModeBtn("📚", "MOTS"),    // Mode Mots
+              ]
+            ),
+            
+            const SizedBox(height: 5),
+            
+            // 3. Langues avec Drapeaux
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly, 
+              children: [
+                _buildLangToggle("🇹🇳", "Arabe"), 
+                _buildLangToggle("🇫🇷", "Français"), 
+                _buildLangToggle("🇺🇸", "Anglais")
+              ]
+            ),
+
             const SizedBox(height: 10),
             Container(margin: const EdgeInsets.symmetric(horizontal: 12), padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: const Color(0xFF23273A), borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white10)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(
