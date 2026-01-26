@@ -256,7 +256,7 @@ class _HandGestureHomeState extends State<HandGestureHome> {
   final Map<String, Map<String, String>> _translationsLetters = {
     "A": {"Français": "A", "Anglais": "A", "Arabe": "أ"},
     "B": {"Français": "B", "Anglais": "B", "Arabe": "ب"},
-    "C": {"Français": "C", "Anglais": "C", "Arabe": "ث"},
+    "C": {"Français": "C", "Anglais": "C", "Arabe": "ت"}, // Simplifié pour démo
     "D": {"Français": "D", "Anglais": "D", "Arabe": "د"},
     "E": {"Français": "E", "Anglais": "E", "Arabe": "إ"},
     "F": {"Français": "F", "Anglais": "F", "Arabe": "ف"},
@@ -277,9 +277,14 @@ class _HandGestureHomeState extends State<HandGestureHome> {
     "U": {"Français": "U", "Anglais": "U", "Arabe": "و"},
     "V": {"Français": "V", "Anglais": "V", "Arabe": "ف"},
     "W": {"Français": "W", "Anglais": "W", "Arabe": "و"},
-    "X": {"Français": "X", "Anglais": "X", "Arabe": "كس"},
+    "X": {"Français": "X", "Anglais": "X", "Arabe": "خ"},
     "Y": {"Français": "Y", "Anglais": "Y", "Arabe": "ي"},
     "Z": {"Français": "Z", "Anglais": "Z", "Arabe": "ز"},
+    "CH": {"Français": "CH", "Anglais": "SH", "Arabe": "ش"},
+    "TH": {"Français": "TH", "Anglais": "TH", "Arabe": "ث"},
+    "KH": {"Français": "KH", "Anglais": "KH", "Arabe": "خ"},
+    "AIN": {"Français": "AIN", "Anglais": "AIN", "Arabe": "ع"},
+    "GHAYN": {"Français": "GHAYN", "Anglais": "GHAYN", "Arabe": "غ"},
   };
 
   final Map<String, Map<String, String>> _translationsWords = {
@@ -290,7 +295,9 @@ class _HandGestureHomeState extends State<HandGestureHome> {
     "OUI": {"Français": "Oui", "Anglais": "Yes", "Arabe": "نعم"},
     "NON": {"Français": "Non", "Anglais": "No", "Arabe": "لا"},
     "S'IL VOUS PLAÎT": {"Français": "S'il vous plaît", "Anglais": "Please", "Arabe": "من فضلك"},
+    "BIENVENUE": {"Français": "Bienvenue", "Anglais": "Welcome", "Arabe": "أهلا"},
   };
+
 
   void _translatePhrase(String newLang) {
     String oldLang = _selectedLanguage;
@@ -396,22 +403,34 @@ class _HandGestureHomeState extends State<HandGestureHome> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    "Phrase (${_selectedLanguage}): $phrase",
-                    style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        "Phrase (${_selectedLanguage}): $phrase",
+                        style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                      if (phrase.isNotEmpty) 
+                        IconButton(
+                          icon: const Icon(Icons.volume_up, color: Colors.cyan, size: 20),
+                          onPressed: _speak,
+                        )
+                    ],
                   ),
+                  const SizedBox(height: 12),
+                  const Text("Séquence de gestes :", style: TextStyle(color: Colors.white54, fontSize: 10)),
                   const SizedBox(height: 8),
-                  // Liste des gestes de la phrase
+                  // Galerie des gestes
                   SizedBox(
-                    height: 40,
+                    height: 80, // Plus grand pour voir les mains
                     child: ListView.builder(
                       scrollDirection: Axis.horizontal,
+                      reverse: _selectedLanguage == "Arabe", // Défilement inversé pour l'arabe
                       itemCount: phrase.length,
                       itemBuilder: (context, index) {
                         String char = phrase[index];
-                        if (char == " ") return const SizedBox(width: 10);
+                        if (char == " ") return const SizedBox(width: 20);
                         
-                        // Trouver la clé originale (A, B, C...) pour l'image
                         String imgKey = char.toUpperCase();
                         _translationsLetters.forEach((key, value) {
                           if (value["Arabe"] == char || value["Français"] == char || value["Anglais"] == char) {
@@ -419,26 +438,41 @@ class _HandGestureHomeState extends State<HandGestureHome> {
                           }
                         });
 
-                        return Padding(
-                          padding: const EdgeInsets.only(right: 4),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
-                            child: Image.asset(
-                              'assets/gestures/${imgKey}_0.jpg',
-                              width: 30,
-                              height: 30,
-                              fit: BoxFit.cover,
-                              errorBuilder: (c, e, s) => Container(color: Colors.white10, width: 20, child: Center(child: Text(char, style: const TextStyle(fontSize: 8)))),
-                            ),
+                        return Container(
+                          margin: const EdgeInsets.only(right: 8),
+                          width: 60,
+                          decoration: BoxDecoration(
+                            color: Colors.black38,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.white10),
+                          ),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Expanded(
+                                child: ClipRRect(
+                                  borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+                                  child: Image.asset(
+                                    'assets/gestures/${imgKey}_0.jpg',
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (c, e, s) => const Center(child: Icon(Icons.error_outline, size: 10, color: Colors.white24)),
+                                  ),
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(vertical: 2),
+                                child: Text(char, style: const TextStyle(color: Colors.cyanAccent, fontSize: 10, fontWeight: FontWeight.bold)),
+                              ),
+                            ],
                           ),
                         );
                       },
                     ),
                   ),
-
                 ],
               ),
             ),
+
 
             const SizedBox(height: 10),
 
