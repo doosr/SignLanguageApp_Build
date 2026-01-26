@@ -120,6 +120,9 @@ class _HandGestureHomeState extends State<HandGestureHome> {
     "FAMILLE": {"Français": "Famille", "Anglais": "Family", "Arabe": "عائلة"},
     "OUI": {"Français": "Oui", "Anglais": "Yes", "Arabe": "نعم"},
     "NON": {"Français": "Non", "Anglais": "No", "Arabe": "لا"},
+    "S'IL VOUS PLAÎT": {"Français": "S'il vous plaît", "Anglais": "Please", "Arabe": "من فضلك"},
+    "AIDE": {"Français": "Aide", "Anglais": "Help", "Arabe": "مساعدة"},
+    "COMMENT ÇA VA": {"Français": "Comment ça va", "Anglais": "How are you", "Arabe": "كيف حالك"},
   };
 
   @override
@@ -230,12 +233,18 @@ class _HandGestureHomeState extends State<HandGestureHome> {
       } else {
         phrase = phrase.split(" ").map((w) {
           String trans = w;
-          _translationsWords.forEach((k, v) { if (v[oldLang]?.toLowerCase() == w.toLowerCase()) trans = v[newLang]!; });
+          _translationsWords.forEach((k, v) { 
+            if (v[oldLang]?.toLowerCase() == w.toLowerCase()) trans = v[newLang]!; 
+          });
           return trans;
         }).join(" ");
       }
     });
+
+    // Lecture automatique lors du changement de langue
+    _speak();
   }
+
 
   void _clear() => setState(() { phrase = ""; detectedText = ""; });
   void _backspace() => setState(() { if (phrase.isNotEmpty) phrase = phrase.substring(0, phrase.length - 1); });
