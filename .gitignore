@@ -1,0 +1,36 @@
+# Build artifacts
+.buildozer/
+bin/
+build/
+dist/
+*.spec.backup
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+_python_bundle/
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Project specific
+.gemini/
+.agent/
+data_collection/
+Data/
+data/
+*.log

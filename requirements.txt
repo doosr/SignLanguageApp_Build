@@ -1,0 +1,11 @@
+opencv-python
+mediapipe
+scikit-learn
+numpy
+pyttsx3
+pillow
+customtkinter
+kivy
+plyer
+gtts
+pygame
