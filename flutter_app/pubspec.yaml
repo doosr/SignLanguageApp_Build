@@ -13,7 +13,8 @@ dependencies:
 
   # Caméra et Vision
   camera: ^0.10.5+9
-  # tflite_flutter: ^0.10.1 # Pour exécuter nos modèles convertis
+  tflite_flutter: ^0.10.1 # Pour exécuter nos modèles convertis
+
   google_mlkit_pose_detection: ^0.10.0 
 
   image_picker: ^1.0.7
