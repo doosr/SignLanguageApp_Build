@@ -188,10 +188,46 @@ class _HandGestureHomeState extends State<HandGestureHome> {
       final inputImage = _inputImageFromCameraImage(image);
       if (inputImage != null) {
         final poses = await _poseDetector.processImage(inputImage);
-        if (mounted) setState(() { _poses = poses; detectedText = poses.isNotEmpty ? "Vu" : "..."; });
+        if (mounted) {
+           setState(() { 
+             _poses = poses; 
+             // Simulation de détection si on voit un corps/main
+             if (poses.isNotEmpty) {
+                detectedText = "Geste...";
+                // Uniquement pour la démo: détection auto après 1s de fixité
+                // Dans le vrai projet, c'est ici qu'on appelle _interpreter.run()
+             } else {
+                detectedText = "...";
+             }
+           });
+        }
       }
     } finally { _isBusy = false; }
   }
+
+  // Cette méthode est appelée quand l'IA reconnaît un signe (ex: 'A' ou 'Bonjour')
+  void _onGestureDetected(String gestureKey) {
+    if (gestureKey.isEmpty) return;
+    
+    setState(() {
+      String translated;
+      if (currentMode == "LETTRES") {
+        // 'A' -> 'أ' (si Arabe)
+        translated = _translationsLetters[gestureKey.toUpperCase()]?[_selectedLanguage] ?? gestureKey;
+        phrase += translated;
+        detectedText = translated;
+      } else {
+        // 'BONJOUR' -> 'مرحبا' (si Arabe)
+        translated = _translationsWords[gestureKey.toUpperCase()]?[_selectedLanguage] ?? gestureKey;
+        phrase += (phrase.isEmpty ? "" : " ") + translated;
+        detectedText = translated;
+      }
+    });
+    
+    // Vocaliser le nouveau mot détecté
+    _speak();
+  }
+
 
   InputImage? _inputImageFromCameraImage(CameraImage image) {
     final sensorOrientation = _controller!.description.sensorOrientation;
