@@ -69,6 +69,15 @@ class _HandGestureHomeState extends State<HandGestureHome> {
   bool isListening = false;
   String currentEspIp = "192.168.1.100";
   
+  // Language for TTS
+  String _selectedLanguage = "Français";
+  final Map<String, String> _languageCodes = {
+    "Français": "fr-FR",
+    "Anglais": "en-US",
+    "Arabe": "ar-SA",
+  };
+
+  
   // Simulation Debug
   Timer? _simulationTimer;
   
@@ -245,12 +254,6 @@ class _HandGestureHomeState extends State<HandGestureHome> {
 
   void _speak() async {
     if (phrase.isNotEmpty) {
-      // Assuming _languageCodes and _selectedLanguage are defined elsewhere in the class
-      // For this example, I'll use a placeholder for _languageCodes and _selectedLanguage
-      // You should ensure these are properly defined in your actual code.
-      Map<String, String> _languageCodes = {"Français": "fr-FR", "English": "en-US"};
-      String _selectedLanguage = "Français"; // Placeholder
-      
       String code = _languageCodes[_selectedLanguage] ?? "fr-FR";
       await flutterTts.setLanguage(code);
       // Pour l'arabe, on peut ajuster le pitch if needed
@@ -260,6 +263,7 @@ class _HandGestureHomeState extends State<HandGestureHome> {
       await flutterTts.speak(phrase);
     }
   }
+
 
   void _onGestureDetected(String gesture) {
     if (gesture.isEmpty) return;
