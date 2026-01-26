@@ -32,7 +32,7 @@ version = 1.0
 
 # (list) Application requirements
 # comma separated e.g. requirements = sqlite3,kivy
-requirements = python3,kivy,opencv,mediapipe,plyer,numpy,pillow,scikit-learn,gtts,sh,requests
+requirements = python3,kivy,opencv,mediapipe,plyer,numpy,pillow,scikit-learn,gtts,sh,requests,arabic-reshaper,python-bidi
 
 # (str) python-for-android fork to use (default is kivy)
 # p4a.fork = kivy
@@ -79,7 +79,7 @@ orientation = portrait
 fullscreen = 0
 
 # (int) Target Android API, should be as high as possible.
-android.api = 31
+android.api = 33
 
 # (int) Minimum API your APK will support.
 # Increased to 24 for numpy/matplotlib compatibility
@@ -108,7 +108,7 @@ android.minapi = 24
 #p4a.verify_install = False
 
 # (list) The Android archs to build for, choices: armeabi-v7a, arm64-v8a, x86, x86_64
-android.archs = arm64-v8a
+android.archs = arm64-v8a, armeabi-v7a
 
 # (bool) enables Android auto backup feature (Android API >= 23)
 android.allow_backup = True

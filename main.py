@@ -9,9 +9,8 @@ class MockModule(ModuleType):
         return MockModule()
 
 if 'matplotlib' not in sys.modules:
-    sys.modules['matplotlib'] = MockModule('matplotlib')
-    sys.modules['matplotlib.pyplot'] = MockModule('matplotlib.pyplot')
-    sys.modules['matplotlib.collections'] = MockModule('matplotlib.collections')
+    for m in ['matplotlib', 'matplotlib.pyplot', 'matplotlib.collections', 'matplotlib.font_manager']:
+        sys.modules[m] = MockModule(m)
 
 import cv2
 import mediapipe as mp
@@ -64,18 +63,10 @@ except ImportError:
 
 # Helper function pour obtenir le chemin des fichiers sur Android
 def get_file_path(filename):
-    """Retourne le chemin absolu d'un fichier, compatible Android"""
-    if platform == 'android':
-        # Sur Android, les fichiers sont dans le répertoire de l'app
-        from android import mActivity
-        app_path = mActivity.getFilesDir().getPath()
-        # Les fichiers sont copiés dans le dossier interne lors du build
-        # On doit chercher dans le répertoire de l'application
-        # Buildozer copie les fichiers dans le répertoire racine
-        return os.path.join(os.path.dirname(os.path.abspath(__file__)), filename)
-    else:
-        # Sur PC, utiliser le chemin relatif normal
-        return os.path.join(os.path.dirname(os.path.abspath(__file__)), filename)
+    """Retourne le chemin absolu d'un fichier, compatible Android et PC"""
+    # Sur Android et PC, le répertoire de l'application est le répertoire de main.py
+    base_path = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base_path, filename)
 
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
