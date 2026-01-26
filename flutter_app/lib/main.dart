@@ -4,7 +4,8 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'dart:async';
 // TFLite
-// import 'package:tflite_flutter/tflite_flutter.dart';
+import 'package:tflite_flutter/tflite_flutter.dart';
+
 import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
@@ -66,10 +67,11 @@ class _HandGestureHomeState extends State<HandGestureHome> {
   Timer? _simulationTimer;
   
   // TFLite Variables embedded:
-  // Interpreter? _interpreterLetters;
-  // Interpreter? _interpreterWords;
+  Interpreter? _interpreterLetters;
+  Interpreter? _interpreterWords;
   List<String> _labelsLetters = [];
   List<String> _labelsWords = [];
+
 
 
   // ... (State variables)
@@ -80,43 +82,45 @@ class _HandGestureHomeState extends State<HandGestureHome> {
     _initCamera();
     _initPermissions();
     _initSpeech();
-    // _loadModels();
+    _loadModels();
 
   }
 
-  // Future<void> _loadModels() async {
-  //   try {
-  //     // Charger Modèles
-  //     _interpreterLetters = await Interpreter.fromAsset('assets/model_letters.tflite');
-  //     _interpreterWords = await Interpreter.fromAsset('assets/model_words.tflite');
+  Future<void> _loadModels() async {
+    try {
+      // Charger Modèles
+      _interpreterLetters = await Interpreter.fromAsset('assets/model_letters.tflite');
+      _interpreterWords = await Interpreter.fromAsset('assets/model_words.tflite');
       
-  //     // Charger Labels
-  //     final labelsData = await rootBundle.loadString('assets/model_letters_labels.txt');
-  //     _labelsLetters = labelsData.split('\n').where((s) => s.isNotEmpty).toList();
+      // Charger Labels
+      final labelsData = await rootBundle.loadString('assets/model_letters_labels.txt');
+      _labelsLetters = labelsData.split('\n').where((s) => s.isNotEmpty).toList();
       
-  //     final wordsData = await rootBundle.loadString('assets/model_words_labels.txt');
-  //     _labelsWords = wordsData.split('\n').where((s) => s.isNotEmpty).toList();
+      final wordsData = await rootBundle.loadString('assets/model_words_labels.txt');
+      _labelsWords = wordsData.split('\n').where((s) => s.isNotEmpty).toList();
 
-  //     print("✅ Modèles chargés !");
-  //   } catch (e) {
-  //     print("❌ Erreur chargement modèles: $e");
-  //   }
-  // }
+      print("✅ Modèles chargés !");
+    } catch (e) {
+      print("❌ Erreur chargement modèles: $e");
+    }
+  }
+
 
   // Simulation prediction pour l'instant (car extraction landmarks complexe sans plugin dédié)
   Future<void> _runInference(List<double> mockLandmarks) async {
-    // if (_interpreterLetters == null) return;
+    if (_interpreterLetters == null) return;
 
-    // // Input: [1, 42] ou [1, 84] selon votre modèle conversion
-    // // Output: [1, N_Classes]
+    // Input: [1, 42] ou [1, 84] selon votre modèle conversion
+    // Output: [1, N_Classes]
     
-    // // Exemple d'utilisation
-    // var input = [mockLandmarks]; 
-    // // var output = List.filled(1 * _labelsLetters.length, 0.0).reshape([1, _labelsLetters.length]);
+    // Exemple d'utilisation
+    var input = [mockLandmarks]; 
+    // var output = List.filled(1 * _labelsLetters.length, 0.0).reshape([1, _labelsLetters.length]);
     
-    // // _interpreterLetters!.run(input, output);
-    // // Trouver index max...
+    // _interpreterLetters!.run(input, output);
+    // Trouver index max...
   }
+
 
 
   
