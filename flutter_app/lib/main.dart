@@ -7,6 +7,7 @@ import 'dart:async';
 // import 'package:tflite_flutter/tflite_flutter.dart';
 import 'dart:io';
 import 'package:flutter/services.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 
 List<CameraDescription> cameras = [];
@@ -51,6 +52,8 @@ class HandGestureHome extends StatefulWidget {
 class _HandGestureHomeState extends State<HandGestureHome> {
   CameraController? _controller;
   FlutterTts flutterTts = FlutterTts();
+  stt.SpeechToText _speech = stt.SpeechToText();
+  bool _isSpeechAvailable = false;
   
   // State
   String detectedText = "En attente...";
@@ -76,7 +79,9 @@ class _HandGestureHomeState extends State<HandGestureHome> {
     super.initState();
     _initCamera();
     _initPermissions();
+    _initSpeech();
     // _loadModels();
+
   }
 
   // Future<void> _loadModels() async {
@@ -120,8 +125,39 @@ class _HandGestureHomeState extends State<HandGestureHome> {
     await Permission.microphone.request();
   }
 
-  void _initCamera() {
+  void _initSpeech() async {
+    _isSpeechAvailable = await _speech.initialize(
+      onStatus: (val) => print('onStatus: $val'),
+      onError: (val) => print('onError: $val'),
+    );
+     if(mounted) setState(() {});
+  }
+
+  void _listen() async {
+    if (!_isSpeechAvailable) {
+      print("Speech recognition not available");
+      // Tentative ré-init
+      _isSpeechAvailable = await _speech.initialize();
+      if(!_isSpeechAvailable) return;
+    }
+
+    if (!isListening) {
+        setState(() => isListening = true);
+        _speech.listen(
+          onResult: (val) => setState(() {
+            phrase = val.recognizedWords;
+          }),
+          localeId: "fr_FR",
+        );
+    } else {
+      setState(() => isListening = false);
+      _speech.stop();
+    }
+  }
+
+  void _initCamera() {  // existing method
     if (cameras.isEmpty) return;
+
     
     _controller = CameraController(cameras[0], ResolutionPreset.medium);
     _controller?.initialize().then((_) {
@@ -361,12 +397,15 @@ class _HandGestureHomeState extends State<HandGestureHome> {
                    Expanded(
                      flex: 2,
                      child: ElevatedButton.icon(
-                       icon: const Icon(Icons.mic, size: 18),
-                       label: const Text("MICRO"),
-                       style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF9C27B0)),
-                       onPressed: () {},
+                       icon: Icon(isListening ? Icons.mic : Icons.mic_none, size: 18),
+                       label: Text(isListening ? "ÉCOUTE" : "MICRO"),
+                       style: ElevatedButton.styleFrom(
+                         backgroundColor: isListening ? Colors.redAccent : const Color(0xFF9C27B0)
+                       ),
+                       onPressed: _listen,
                      ),
                    ),
+
                    const SizedBox(width: 10),
                    Expanded(
                      flex: 3,
