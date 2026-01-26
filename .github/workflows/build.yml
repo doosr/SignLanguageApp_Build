@@ -13,15 +13,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Free Disk Space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf "/usr/local/share/boost"
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libssl-dev libffi-dev python3-dev \
+            git cmake gfortran libopenblas-dev liblapack-dev pkg-config \
+            libgl1-mesa-dev libgles2-mesa-dev autoconf automake libtool \
+            libltdl-dev zlib1g-dev openjdk-17-jdk
+
+      - name: Install Buildozer
+        run: |
+          pip3 install --upgrade buildozer cython==0.29.33 virtualenv
+
       - name: Build with Buildozer
-        uses: kbsezginel/buildozer-action-v2@master
-        id: buildozer
-        with:
-          command: buildozer -v android debug
-          buildozer_version: master
+        run: |
+          yes | buildozer android debug
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: package
-          path: ${{ steps.buildozer.outputs.filename }}
+          path: bin/*.apk
