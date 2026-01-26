@@ -252,85 +252,35 @@ class _HandGestureHomeState extends State<HandGestureHome> {
 
   // --- Actions ---
 
-  void _speak() async {
-    if (phrase.isNotEmpty) {
-      String code = _languageCodes[_selectedLanguage] ?? "fr-FR";
-      await flutterTts.setLanguage(code);
-      // Pour l'arabe, on peut ajuster le pitch if needed
-      if (code == "ar-SA") {
-        await flutterTts.setPitch(1.0);
-      }
-      await flutterTts.speak(phrase);
+  // --- Translation Data ---
+  final Map<String, Map<String, String>> _translations = {
+    "LETTRES": {
+      "A": {"Français": "A", "Anglais": "A", "Arabe": "أ"},
+      "B": {"Français": "B", "Anglais": "B", "Arabe": "ب"},
+      // ... Ajoutez le reste si nécessaire
+    },
+    "MOTS": {
+      "Bonjour": {"Français": "Bonjour", "Anglais": "Hello", "Arabe": "مرحبا"},
+      "Merci": {"Français": "Merci", "Anglais": "Thank you", "Arabe": "شكرا"},
+      "Maison": {"Français": "Maison", "Anglais": "House", "Arabe": "منزل"},
     }
-  }
+  };
 
-
-  void _onGestureDetected(String gesture) {
-    if (gesture.isEmpty) return;
+  void _translatePhrase(String newLang) {
+    // Cette fonction simule une traduction simple basée sur les mots détectés
+    // Pour un vrai projet, on utiliserait une API de traduction.
     setState(() {
-      detectedText = gesture;
-      if (currentMode == "LETTRES") {
-        phrase += gesture;
-      } else {
-        phrase += (phrase.isEmpty ? "" : " ") + gesture;
-      }
-    });
-    // Optionnel: lire automatiquement le geste détecté ?
-    // _speak(); 
-  }
-
-  void _clear() {
-    setState(() {
-      phrase = "";
-      detectedText = "";
-    });
-  }
-
-  void _backspace() {
-    if (phrase.isNotEmpty) {
-      setState(() {
-        phrase = phrase.substring(0, phrase.length - 1);
+      _selectedLanguage = newLang;
+      // Simulation simple: on garde la phrase ou on la change si c'est un mot connu
+      _translations["MOTS"].forEach((key, value) {
+        if (phrase.contains(value["Français"]!) || phrase.contains(value["Anglais"]!) || phrase.contains(value["Arabe"]!)) {
+           phrase = value[newLang]!;
+        }
       });
-    }
-  }
-
-  void _addSpace() {
-    setState(() {
-      phrase += " ";
     });
   }
 
-  void _toggleMode(String mode) {
-    setState(() {
-      currentMode = mode;
-      detectedText = "Mode changé: $mode";
-    });
-  }
-
-  // --- UI Components ---
-
-  Widget _buildControlBtn(String label, Color color, VoidCallback onPressed) {
-    return Expanded(
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 4),
-        height: 50,
-        child: ElevatedButton(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: color,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            padding: EdgeInsets.zero,
-          ),
-          onPressed: onPressed,
-          child: Text(
-            label,
-            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
-          ),
-        ),
-      ),
-    );
-  }
+  // ... (existing initState, _initCamera)
 
   @override
   Widget build(BuildContext context) {
@@ -355,36 +305,25 @@ class _HandGestureHomeState extends State<HandGestureHome> {
               ),
             ),
             
-            // 2. Mode Selector
+            // 2. Mode & Language Selector
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12.0),
-              child: Row(
+              child: Column(
                 children: [
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: () => _toggleMode("LETTRES"),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        decoration: BoxDecoration(
-                          color: currentMode == "LETTRES" ? const Color(0xFF4CAF50) : Colors.grey[800],
-                          borderRadius: const BorderRadius.only(topLeft: Radius.circular(12), bottomLeft: Radius.circular(12)),
-                        ),
-                        child: const Center(child: Text("LETTRES", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
-                      ),
-                    ),
+                  Row(
+                    children: [
+                      _buildModeBtn("LETTRES"),
+                      _buildModeBtn("MOTS"),
+                    ],
                   ),
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: () => _toggleMode("MOTS"),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        decoration: BoxDecoration(
-                          color: currentMode == "MOTS" ? const Color(0xFF4CAF50) : Colors.grey[800],
-                          borderRadius: const BorderRadius.only(topRight: Radius.circular(12), bottomRight: Radius.circular(12)),
-                        ),
-                        child: const Center(child: Text("MOTS", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
-                      ),
-                    ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      _buildLangToggle("Arabe"),
+                      _buildLangToggle("Français"),
+                      _buildLangToggle("Anglais"),
+                    ],
                   ),
                 ],
               ),
@@ -392,11 +331,11 @@ class _HandGestureHomeState extends State<HandGestureHome> {
             
             const SizedBox(height: 10),
 
-            // 3. Info Card
+            // 3. Info Card & Phrase Gestures
             Container(
               width: double.infinity,
               margin: const EdgeInsets.symmetric(horizontal: 12),
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: const Color(0xFF23273A),
                 borderRadius: BorderRadius.circular(16),
@@ -406,26 +345,48 @@ class _HandGestureHomeState extends State<HandGestureHome> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    "Détecté: $detectedText",
-                    style: const TextStyle(color: Colors.cyanAccent, fontSize: 16, fontWeight: FontWeight.bold),
+                    "Phrase (${_selectedLanguage}): $phrase",
+                    style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
                   ),
-                  const SizedBox(height: 5),
-                  Text(
-                    "Phrase: $phrase",
-                    style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                  const SizedBox(height: 8),
+                  // Liste des gestes de la phrase
+                  SizedBox(
+                    height: 40,
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: phrase.length,
+                      itemBuilder: (context, index) {
+                        String char = phrase[index].toUpperCase();
+                        if (char == " ") return const SizedBox(width: 10);
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 4),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(4),
+                            child: Image.asset(
+                              'assets/gestures/${char}_0.jpg',
+                              width: 30,
+                              height: 30,
+                              fit: BoxFit.cover,
+                              errorBuilder: (c, e, s) => Container(color: Colors.white10, width: 20, child: Center(child: Text(char, style: const TextStyle(fontSize: 8)))),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
                   ),
                 ],
               ),
             ),
 
             const SizedBox(height: 10),
-            // 4. Main Visual Area (Camera + Gesture Image)
+
+            // 4. Main Visual Area (Camera with Landmarks)
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8.0),
                 child: Row(
                   children: [
-                    // Camera
+                    // Camera + Painter
                     Expanded(
                       flex: 6,
                       child: ClipRRect(
@@ -434,154 +395,173 @@ class _HandGestureHomeState extends State<HandGestureHome> {
                           fit: StackFit.expand,
                           children: [
                             CameraPreview(_controller!),
-                            // Overlay OverlayBox
-                            Center(
-                              child: Container(
-                                width: 200,
-                                height: 200,
-                                decoration: BoxDecoration(
-                                  border: Border.all(color: Colors.cyan.withOpacity(0.5), width: 2),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
+                            // Dessiner les points de détection
+                            CustomPaint(
+                              painter: PosePainter(_poses, _controller!.value.previewSize!, _controller!.description.sensorOrientation),
                             ),
                           ],
                         ),
                       ),
                     ),
                     const SizedBox(width: 8),
-                    // Gesture Image
+                    // Gesture Image (Dernier détecté)
                     Expanded(
                       flex: 4,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: Colors.black26,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: Colors.white12),
-                        ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(16),
-                          child: (detectedText != "En attente..." && detectedText.isNotEmpty) 
-                            ? Image.asset(
-                                'assets/gestures/${detectedText.toUpperCase()}_0.jpg',
-                                fit: BoxFit.contain,
-                                errorBuilder: (context, error, stackTrace) => Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    const Icon(Icons.image_not_supported, color: Colors.white24, size: 40),
-                                    const SizedBox(height: 10),
-                                    Text(detectedText, style: const TextStyle(color: Colors.white54, fontSize: 12)),
-                                  ],
-                                ),
-                              )
-                            : const Column(
-
-
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.back_hand, size: 40, color: Colors.white24),
-                                  SizedBox(height: 10),
-                                  Text("Signez !", style: TextStyle(color: Colors.white54)),
-                                ],
-                              ),
-                        ),
-                      ),
+                      child: _buildLastGestureDisplay(),
                     ),
                   ],
                 ),
               ),
             ),
-
             
-            // 5. Bottom Controls (Lang / Micro / ESP)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              child: Column(
+            // 5. Microphone & ESP
+            _buildBottomControls(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildModeBtn(String mode) {
+    bool isSelected = currentMode == mode;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() => currentMode = mode),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: isSelected ? const Color(0xFF4CAF50) : Colors.grey[800],
+            borderRadius: mode == "LETTRES" 
+              ? const BorderRadius.only(topLeft: Radius.circular(12), bottomLeft: Radius.circular(12))
+              : const BorderRadius.only(topRight: Radius.circular(12), bottomRight: Radius.circular(12)),
+          ),
+          child: Center(child: Text(mode, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLangToggle(String lang) {
+    bool isSelected = _selectedLanguage == lang;
+    return GestureDetector(
+      onTap: () => _translatePhrase(lang),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.cyan : Colors.white10,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(lang, style: TextStyle(color: isSelected ? Colors.black : Colors.white70, fontSize: 12, fontWeight: FontWeight.bold)),
+      ),
+    );
+  }
+
+  Widget _buildLastGestureDisplay() {
+      return Container(
+        decoration: BoxDecoration(
+          color: Colors.black26,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white12),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: (detectedText != "En attente..." && detectedText.isNotEmpty) 
+            ? Image.asset(
+                'assets/gestures/${detectedText.toUpperCase()}_0.jpg',
+                fit: BoxFit.contain,
+                errorBuilder: (context, error, stackTrace) => Center(child: Text(detectedText, style: const TextStyle(color: Colors.white54))),
+              )
+            : const Center(child: Icon(Icons.back_hand, size: 40, color: Colors.white24)),
+        ),
+      );
+  }
+
+  Widget _buildBottomControls() {
+    return Container(
+              padding: const EdgeInsets.all(12),
+              child: Row(
                 children: [
-                   Row(
-                    children: [
-                      // Lang Selector
-                      Expanded(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10),
-                          decoration: BoxDecoration(
-                            color: Colors.black26,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: DropdownButton<String>(
-                            value: _selectedLanguage,
-                            isExpanded: true,
-                            underline: Container(),
-                            items: _languageCodes.keys.map((String value) {
-                              return DropdownMenuItem<String>(
-                                value: value,
-                                child: Text(value, style: const TextStyle(color: Colors.white, fontSize: 12)),
-                              );
-                            }).toList(),
-                            onChanged: (newValue) {
-                              setState(() {
-                                _selectedLanguage = newValue!;
-                              });
-                            },
-                            dropdownColor: Colors.grey[850], // Set dropdown background color
-                            style: const TextStyle(color: Colors.white), // Set text color for selected item
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      // Micro
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          icon: Icon(isListening ? Icons.mic : Icons.mic_none, size: 18),
-                          label: Text(isListening ? "ÉCOUTE" : "MICRO"),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: isListening ? Colors.redAccent : const Color(0xFF9C27B0),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                          ),
-                          onPressed: _listen,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                       Expanded(
-                         flex: 3,
-                         child: TextField(
-                           style: const TextStyle(fontSize: 12, color: Colors.white),
-                           decoration: const InputDecoration(
-                             hintText: "ESP32 IP",
-                             hintStyle: TextStyle(color: Colors.white54),
-                             filled: true,
-                             fillColor: Colors.black26,
-                             contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                             isDense: true,
-                             border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(8))),
-                             enabledBorder: OutlineInputBorder(
-                               borderSide: BorderSide(color: Colors.white12),
-                               borderRadius: BorderRadius.all(Radius.circular(8)),
-                             ),
-                             focusedBorder: OutlineInputBorder(
-                               borderSide: BorderSide(color: Colors.cyan),
-                               borderRadius: BorderRadius.all(Radius.circular(8)),
-                             ),
-                           ),
-                           onChanged: (v) => currentEspIp = v,
-                         ),
+                   Expanded(
+                     flex: 2,
+                     child: ElevatedButton.icon(
+                       icon: Icon(isListening ? Icons.mic : Icons.mic_none, size: 18),
+                       label: Text(isListening ? "ARRÊTER" : "MICRO"),
+                       style: ElevatedButton.styleFrom(
+                         backgroundColor: isListening ? Colors.redAccent : const Color(0xFF9C27B0),
+                         padding: const EdgeInsets.symmetric(vertical: 12),
                        ),
-                       const SizedBox(width: 8),
-                       IconButton(
-                         icon: const Icon(Icons.wifi, color: Colors.cyan),
-                         onPressed: () {
-                             ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Connexion à $currentEspIp...')));
-                         },
-                       )
-                    ],
-                  ),
+                       onPressed: _listen,
+                     ),
+                   ),
+                   const SizedBox(width: 10),
+                   Expanded(
+                     flex: 3,
+                     child: TextField(
+                       style: const TextStyle(fontSize: 12, color: Colors.white),
+                       decoration: const InputDecoration(
+                         hintText: "ESP32 IP",
+                         hintStyle: TextStyle(color: Colors.white54),
+                         filled: true,
+                         fillColor: Colors.black26,
+                         isDense: true,
+                         border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(8))),
+                       ),
+                       onChanged: (v) => currentEspIp = v,
+                     ),
+                   ),
                 ],
               ),
-            ),
+            );
+  }
+}
+
+// --- Dessinateur des points sur la main (Pose) ---
+class PosePainter extends CustomPainter {
+  final List<Pose> poses;
+  final Size absoluteImageSize;
+  final int rotation;
+
+  PosePainter(this.poses, this.absoluteImageSize, this.rotation);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..style = PaintingStyle.fill
+      ..color = Colors.redAccent
+      ..strokeWidth = 4.0;
+
+    for (final pose in poses) {
+      // Pour chaque point détecté (Landmark)
+      pose.landmarks.forEach((_, landmark) {
+        final double x = _translateX(landmark.x, rotation, size, absoluteImageSize);
+        final double y = _translateY(landmark.y, rotation, size, absoluteImageSize);
+        
+        // Dessiner un point
+        canvas.drawCircle(Offset(x, y), 5, paint);
+      });
+    }
+  }
+
+  double _translateX(double x, int rotation, Size size, Size absoluteImageSize) {
+    switch (rotation) {
+      case 90: return x * size.width / absoluteImageSize.height;
+      case 270: return size.width - x * size.width / absoluteImageSize.height;
+      default: return x * size.width / absoluteImageSize.width;
+    }
+  }
+
+  double _translateY(double y, int rotation, Size size, Size absoluteImageSize) {
+    switch (rotation) {
+      case 90: return y * size.height / absoluteImageSize.width;
+      case 270: return size.height - y * size.height / absoluteImageSize.width;
+      default: return y * size.height / absoluteImageSize.height;
+    }
+  }
+
+  @override
+  bool shouldRepaint(PosePainter oldDelegate) => true;
+}
+
 
           ],
         ),
