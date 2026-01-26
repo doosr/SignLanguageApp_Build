@@ -5,7 +5,8 @@ import 'package:permission_handler/permission_handler.dart';
 import 'dart:async';
 // TFLite
 import 'package:tflite_flutter/tflite_flutter.dart';
-
+import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
+import 'package:flutter/foundation.dart';
 import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
@@ -55,6 +56,11 @@ class _HandGestureHomeState extends State<HandGestureHome> {
   FlutterTts flutterTts = FlutterTts();
   stt.SpeechToText _speech = stt.SpeechToText();
   bool _isSpeechAvailable = false;
+  
+  // Vision
+  final PoseDetector _poseDetector = PoseDetector(options: PoseDetectorOptions());
+  bool _isBusy = false;
+  List<Pose> _poses = [];
   
   // State
   String detectedText = "En attente...";
@@ -159,32 +165,79 @@ class _HandGestureHomeState extends State<HandGestureHome> {
     }
   }
 
-  void _initCamera() {  // existing method
+  void _initCamera() {
     if (cameras.isEmpty) return;
-
     
-    _controller = CameraController(cameras[0], ResolutionPreset.medium);
+    // Utiliser la caméra frontale si possible pour les gestes
+    CameraDescription selectedCamera = cameras.firstWhere(
+      (cam) => cam.lensDirection == CameraLensDirection.front,
+      orElse: () => cameras[0]
+    );
+
+    _controller = CameraController(selectedCamera, ResolutionPreset.medium, enableAudio: false);
     _controller?.initialize().then((_) {
       if (!mounted) return;
+      
+      // Démarrer le flux de vision
+      _controller?.startImageStream(_processCameraImage);
+      
       setState(() {});
-    }).catchError((Object e) {
-      if (e is CameraException) {
-        switch (e.code) {
-          case 'CameraAccessDenied':
-            print('User denied camera access.');
-            break;
-          default:
-            print('Handle other errors.');
-            break;
-        }
-      }
     });
   }
+
+  void _processCameraImage(CameraImage image) async {
+    if (_isBusy) return;
+    _isBusy = true;
+
+    try {
+      final inputImage = _inputImageFromCameraImage(image);
+      if (inputImage == null) return;
+
+      final poses = await _poseDetector.processImage(inputImage);
+      
+      if (mounted) {
+        setState(() {
+          _poses = poses;
+          if (_poses.isNotEmpty) {
+            detectedText = "Main/Corps détecté";
+            // Ici on pourrait appeler _runInference avec les coordonnées
+          } else {
+            detectedText = "Personne non détectée";
+          }
+        });
+      }
+    } catch (e) {
+      print("Erreur vision: $e");
+    } finally {
+      _isBusy = false;
+    }
+  }
+
+  InputImage? _inputImageFromCameraImage(CameraImage image) {
+    final sensorOrientation = _controller!.description.sensorOrientation;
+    final InputImageRotation rotation = InputImageRotationValue.fromRawValue(sensorOrientation) ?? InputImageRotation.rotation0deg;
+    final InputImageFormat format = InputImageFormatValue.fromRawValue(image.format.raw) ?? InputImageFormat.nv21;
+
+    final plane = image.planes[0];
+
+    return InputImage.fromBytes(
+      bytes: plane.bytes,
+      metadata: InputImageMetadata(
+        size: Size(image.width.toDouble(), image.height.toDouble()),
+        rotation: rotation,
+        format: format,
+        bytesPerRow: plane.bytesPerRow,
+      ),
+    );
+  }
+
+
   
   @override
   void dispose() {
     _controller?.dispose();
     _simulationTimer?.cancel();
+    _poseDetector.close();
     super.dispose();
   }
 
@@ -192,9 +245,34 @@ class _HandGestureHomeState extends State<HandGestureHome> {
 
   void _speak() async {
     if (phrase.isNotEmpty) {
-      await flutterTts.setLanguage("fr-FR");
+      // Assuming _languageCodes and _selectedLanguage are defined elsewhere in the class
+      // For this example, I'll use a placeholder for _languageCodes and _selectedLanguage
+      // You should ensure these are properly defined in your actual code.
+      Map<String, String> _languageCodes = {"Français": "fr-FR", "English": "en-US"};
+      String _selectedLanguage = "Français"; // Placeholder
+      
+      String code = _languageCodes[_selectedLanguage] ?? "fr-FR";
+      await flutterTts.setLanguage(code);
+      // Pour l'arabe, on peut ajuster le pitch if needed
+      if (code == "ar-SA") {
+        await flutterTts.setPitch(1.0);
+      }
       await flutterTts.speak(phrase);
     }
+  }
+
+  void _onGestureDetected(String gesture) {
+    if (gesture.isEmpty) return;
+    setState(() {
+      detectedText = gesture;
+      if (currentMode == "LETTRES") {
+        phrase += gesture;
+      } else {
+        phrase += (phrase.isEmpty ? "" : " ") + gesture;
+      }
+    });
+    // Optionnel: lire automatiquement le geste détecté ?
+    // _speak(); 
   }
 
   void _clear() {
@@ -337,7 +415,6 @@ class _HandGestureHomeState extends State<HandGestureHome> {
             ),
 
             const SizedBox(height: 10),
-
             // 4. Main Visual Area (Camera + Gesture Image)
             Expanded(
               child: Padding(
@@ -369,7 +446,7 @@ class _HandGestureHomeState extends State<HandGestureHome> {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    // Gesture Image Placeholder
+                    // Gesture Image
                     Expanded(
                       flex: 4,
                       child: Container(
@@ -378,13 +455,31 @@ class _HandGestureHomeState extends State<HandGestureHome> {
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(color: Colors.white12),
                         ),
-                        child: const Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.image, size: 40, color: Colors.white24),
-                            SizedBox(height: 10),
-                            Text("Image Geste", style: TextStyle(color: Colors.white54)),
-                          ],
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(16),
+                          child: (detectedText != "En attente..." && detectedText.isNotEmpty) 
+                            ? Image.asset(
+                                'assets/gestures/${detectedText.toUpperCase()}_0.jpg',
+                                fit: BoxFit.contain,
+                                errorBuilder: (context, error, stackTrace) => Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(Icons.image_not_supported, color: Colors.white24, size: 40),
+                                    const SizedBox(height: 10),
+                                    Text(detectedText, style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                                  ],
+                                ),
+                              )
+                            : const Column(
+
+
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.back_hand, size: 40, color: Colors.white24),
+                                  SizedBox(height: 10),
+                                  Text("Signez !", style: TextStyle(color: Colors.white54)),
+                                ],
+                              ),
                         ),
                       ),
                     ),
@@ -392,49 +487,98 @@ class _HandGestureHomeState extends State<HandGestureHome> {
                 ),
               ),
             ),
+
             
             // 5. Bottom Controls (Lang / Micro / ESP)
             Container(
-              padding: const EdgeInsets.all(12),
-              child: Row(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Column(
                 children: [
-                   Expanded(
-                     flex: 2,
-                     child: ElevatedButton.icon(
-                       icon: Icon(isListening ? Icons.mic : Icons.mic_none, size: 18),
-                       label: Text(isListening ? "ÉCOUTE" : "MICRO"),
-                       style: ElevatedButton.styleFrom(
-                         backgroundColor: isListening ? Colors.redAccent : const Color(0xFF9C27B0)
+                   Row(
+                    children: [
+                      // Lang Selector
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          decoration: BoxDecoration(
+                            color: Colors.black26,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: DropdownButton<String>(
+                            value: _selectedLanguage,
+                            isExpanded: true,
+                            underline: Container(),
+                            items: _languageCodes.keys.map((String value) {
+                              return DropdownMenuItem<String>(
+                                value: value,
+                                child: Text(value, style: const TextStyle(color: Colors.white, fontSize: 12)),
+                              );
+                            }).toList(),
+                            onChanged: (newValue) {
+                              setState(() {
+                                _selectedLanguage = newValue!;
+                              });
+                            },
+                            dropdownColor: Colors.grey[850], // Set dropdown background color
+                            style: const TextStyle(color: Colors.white), // Set text color for selected item
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      // Micro
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          icon: Icon(isListening ? Icons.mic : Icons.mic_none, size: 18),
+                          label: Text(isListening ? "ÉCOUTE" : "MICRO"),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: isListening ? Colors.redAccent : const Color(0xFF9C27B0),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                          onPressed: _listen,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                       Expanded(
+                         flex: 3,
+                         child: TextField(
+                           style: const TextStyle(fontSize: 12, color: Colors.white),
+                           decoration: const InputDecoration(
+                             hintText: "ESP32 IP",
+                             hintStyle: TextStyle(color: Colors.white54),
+                             filled: true,
+                             fillColor: Colors.black26,
+                             contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                             isDense: true,
+                             border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(8))),
+                             enabledBorder: OutlineInputBorder(
+                               borderSide: BorderSide(color: Colors.white12),
+                               borderRadius: BorderRadius.all(Radius.circular(8)),
+                             ),
+                             focusedBorder: OutlineInputBorder(
+                               borderSide: BorderSide(color: Colors.cyan),
+                               borderRadius: BorderRadius.all(Radius.circular(8)),
+                             ),
+                           ),
+                           onChanged: (v) => currentEspIp = v,
+                         ),
                        ),
-                       onPressed: _listen,
-                     ),
-                   ),
-
-                   const SizedBox(width: 10),
-                   Expanded(
-                     flex: 3,
-                     child: TextField(
-                       style: const TextStyle(fontSize: 12),
-                       decoration: const InputDecoration(
-                         hintText: "ESP32 IP",
-                         filled: true,
-                         fillColor: Colors.black26,
-                         contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 0),
-                         border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(8))),
-                       ),
-                       onChanged: (v) => currentEspIp = v,
-                     ),
-                   ),
-                   IconButton(
-                     icon: const Icon(Icons.wifi, color: Colors.cyan),
-                     onPressed: () {
-                         // TODO: Connect ESP Logic
-                         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Connexion à $currentEspIp...')));
-                     },
-                   )
+                       const SizedBox(width: 8),
+                       IconButton(
+                         icon: const Icon(Icons.wifi, color: Colors.cyan),
+                         onPressed: () {
+                             ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Connexion à $currentEspIp...')));
+                         },
+                       )
+                    ],
+                  ),
                 ],
               ),
             ),
+
           ],
         ),
       ),

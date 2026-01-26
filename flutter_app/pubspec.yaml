@@ -50,4 +50,6 @@ flutter:
   # Activer les assets
   assets:
     - assets/
+    - assets/gestures/
+
 
