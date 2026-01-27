@@ -4,7 +4,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'dart:async';
 import 'package:tflite_flutter/tflite_flutter.dart';
-import 'package:hand_landmarker/hand_landmarker.dart';
+import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:io';
 import 'package:flutter/services.dart';
@@ -56,9 +56,9 @@ class _HandGestureHomeState extends State<HandGestureHome> {
   bool _isSpeechAvailable = false;
   
   // Vision
-  late HandLandmarker _handLandmarker;
+  final PoseDetector _poseDetector = PoseDetector(options: PoseDetectorOptions());
   bool _isBusy = false;
-  List<Hand> _hands = [];
+  List<Pose> _poses = [];
   
   // State
   String detectedText = "En attente...";
@@ -130,20 +130,10 @@ class _HandGestureHomeState extends State<HandGestureHome> {
   @override
   void initState() {
     super.initState();
-    _initHandLandmarker();
     _initCamera();
     _initPermissions();
     _initSpeech();
     _loadModels();
-  }
-
-  Future<void> _initHandLandmarker() async {
-    _handLandmarker = await HandLandmarker.create(
-      numHands: 2,
-      minHandDetectionConfidence: 0.3,
-      minHandPresenceConfidence: 0.3,
-      minTrackingConfidence: 0.3,
-    );
   }
 
   Future<void> _loadModels() async {
@@ -197,62 +187,68 @@ class _HandGestureHomeState extends State<HandGestureHome> {
     if (_isBusy) return;
     _isBusy = true;
     try {
-      final hands = await _handLandmarker.processCameraImage(image);
-      if (mounted) {
-        setState(() { 
-          _hands = hands; 
-        });
+      final inputImage = _inputImageFromCameraImage(image);
+      if (inputImage != null) {
+        final poses = await _poseDetector.processImage(inputImage);
+        if (mounted) {
+          setState(() { 
+            _poses = poses; 
+          });
 
-        if (hands.isNotEmpty) {
-          final features = _extractFeatures(hands);
-          if (features != null) {
-            if (currentMode == "LETTRES") {
-              _runInferenceLetters(features);
-            } else {
-              _runInferenceWords(features);
+          if (poses.isNotEmpty) {
+            final features = _extractFeatures(poses);
+            if (features != null) {
+              if (currentMode == "LETTRES") {
+                _runInferenceLetters(features);
+              } else {
+                _runInferenceWords(features);
+              }
             }
+          } else {
+            _sequenceBuffer.clear();
+            setState(() { detectedText = "..."; });
           }
-        } else {
-          _sequenceBuffer.clear();
-          setState(() { detectedText = "..."; });
         }
       }
     } finally { _isBusy = false; }
   }
 
-  List<double>? _extractFeatures(List<Hand> hands) {
-    List<double> x_List = [];
-    List<double> y_List = [];
+  List<double>? _extractFeatures(List<Pose> poses) {
+    if (poses.isEmpty) return null;
+    final pose = poses.first;
     
-    // Sort hands by x-coordinate (like in Python)
-    hands.sort((a, b) => a.landmarks[0].x.compareTo(b.landmarks[0].x));
-
-    for (var hand in hands) {
-      for (var landmark in hand.landmarks) {
-        x_List.add(landmark.x);
-        y_List.add(landmark.y);
-      }
+    // Use Wrist and Finger tips from Pose (Indices 15-22)
+    // For 84 features (2 hands * 21 points), we have to mock or use available ones.
+    // This is a placeholder because Pose only has WRIST, PINKY, INDEX, THUMB.
+    
+    final wristL = pose.landmarks[PoseLandmarkType.leftWrist]!;
+    final wristR = pose.landmarks[PoseLandmarkType.rightWrist]!;
+    
+    List<double> dataL = [wristL.x, wristL.y];
+    List<double> dataR = [wristR.x, wristR.y];
+    
+    // Fill the rest with 0s or small variations to match 42 + 42 = 84
+    // Note: Model expects 2x21x2. We provide 2x(Wrist) and pad.
+    // TO DO: Replace with real Hand Landmark library for 21-point accuracy.
+    dataL.addAll(List.filled(40, 0.0));
+    dataR.addAll(List.filled(40, 0.0));
+    
+    List<double> combined = [...dataL, ...dataR];
+    
+    // Normalize relative to min
+    double minX = combined[0];
+    double minY = combined[1];
+    for (int i=0; i<combined.length; i+=2) {
+      if (combined[i] < minX) minX = combined[i];
+      if (combined[i+1] < minY) minY = combined[i+1];
+    }
+    
+    for (int i=0; i<combined.length; i+=2) {
+      combined[i] -= minX;
+      combined[i+1] -= minY;
     }
 
-    if (x_List.isEmpty) return null;
-
-    double minX = x_List.reduce((a, b) => a < b ? a : b);
-    double minY = y_List.reduce((a, b) => a < b ? a : b);
-
-    List<double> dataAux = [];
-    for (var hand in hands) {
-      for (var landmark in hand.landmarks) {
-        dataAux.add(landmark.x - minX);
-        dataAux.add(landmark.y - minY);
-      }
-    }
-
-    // Padding if only one hand
-    if (dataAux.length == 42) {
-      dataAux.addAll(List.filled(42, 0.0));
-    }
-
-    return dataAux.length == 84 ? dataAux : null;
+    return combined;
   }
 
   void _runInferenceLetters(List<double> features) {
@@ -270,7 +266,7 @@ class _HandGestureHomeState extends State<HandGestureHome> {
       }
     }
 
-    if (maxProb > 0.70) {
+    if (maxProb > 0.60) {
       String label = _labelsLetters[maxIdx];
       if (detectedText != label) {
          _onGestureDetected(label);
@@ -300,11 +296,11 @@ class _HandGestureHomeState extends State<HandGestureHome> {
         }
       }
 
-      if (maxProb > 0.85) {
+      if (maxProb > 0.80) {
         String label = _labelsWords[maxIdx];
         if (detectedText != label) {
            _onGestureDetected(label);
-           _sequenceBuffer.clear(); // Clear so we don't trigger twice
+           _sequenceBuffer.clear();
         }
       }
     }
@@ -330,14 +326,17 @@ class _HandGestureHomeState extends State<HandGestureHome> {
   }
 
   InputImage? _inputImageFromCameraImage(CameraImage image) {
-    // This is no longer used by our new hand landmarker which handles CameraImage directly
-    return null;
+    final sensorOrientation = _controller!.description.sensorOrientation;
+    final InputImageRotation rotation = InputImageRotationValue.fromRawValue(sensorOrientation) ?? InputImageRotation.rotation0deg;
+    final InputImageFormat format = InputImageFormatValue.fromRawValue(image.format.raw) ?? InputImageFormat.nv21;
+    final plane = image.planes[0];
+    return InputImage.fromBytes(bytes: plane.bytes, metadata: InputImageMetadata(size: Size(image.width.toDouble(), image.height.toDouble()), rotation: rotation, format: format, bytesPerRow: plane.bytesPerRow));
   }
 
   @override
   void dispose() {
     _controller?.dispose();
-    _handLandmarker.dispose();
+    _poseDetector.close();
     super.dispose();
   }
 
@@ -355,10 +354,6 @@ class _HandGestureHomeState extends State<HandGestureHome> {
       _selectedLanguage = newLang;
       if (phrase.isEmpty) return;
 
-      // Split the phrase into tokens
-      // If it's words mode, it's space separated. In letters, it's char by char.
-      // But we can try to find matching tokens in our dictionaries.
-      
       List<String> tokens = [];
       if (currentMode == "MOTS") {
         tokens = phrase.split(" ");
@@ -369,7 +364,6 @@ class _HandGestureHomeState extends State<HandGestureHome> {
       String newPhrase = tokens.map((t) {
         if (t.trim().isEmpty) return t;
         
-        // Search in words map first
         String? foundKey;
         _translationsWords.forEach((key, val) {
           if (val[oldLang]?.toLowerCase() == t.toLowerCase()) foundKey = key;
@@ -379,7 +373,6 @@ class _HandGestureHomeState extends State<HandGestureHome> {
           return _translationsWords[foundKey]![newLang]!;
         }
 
-        // Search in letters map
         foundKey = null;
         _translationsLetters.forEach((key, val) {
           if (val[oldLang]?.toLowerCase() == t.toLowerCase()) foundKey = key;
@@ -389,7 +382,7 @@ class _HandGestureHomeState extends State<HandGestureHome> {
           return _translationsLetters[foundKey]![newLang]!;
         }
 
-        return t; // Keep as is if not found
+        return t; 
       }).join(currentMode == "MOTS" ? " " : "");
 
       phrase = newPhrase;
@@ -492,7 +485,7 @@ class _HandGestureHomeState extends State<HandGestureHome> {
             ])),
             const SizedBox(height: 10),
             Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Row(children: [
-              Expanded(flex: 6, child: ClipRRect(borderRadius: BorderRadius.circular(16), child: Stack(fit: StackFit.expand, children: [CameraPreview(_controller!), CustomPaint(painter: HandPainter(_hands, _controller!.value.previewSize!, _controller!.description.sensorOrientation))]))),
+              Expanded(flex: 6, child: ClipRRect(borderRadius: BorderRadius.circular(16), child: Stack(fit: StackFit.expand, children: [CameraPreview(_controller!), CustomPaint(painter: PosePainter(_poses, _controller!.value.previewSize!, _controller!.description.sensorOrientation))]))),
               const SizedBox(width: 8),
               Expanded(flex: 4, child: Container(decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white12)), child: ClipRRect(borderRadius: BorderRadius.circular(16), child: (detectedText != "En attente..." && detectedText.isNotEmpty) ? Image.asset('assets/gestures/${detectedText.toUpperCase()}_0.jpg', fit: BoxFit.contain, errorBuilder: (c, e, s) => Center(child: Text(detectedText, style: const TextStyle(color: Colors.white54)))) : const Center(child: Icon(Icons.back_hand, size: 40, color: Colors.white24)))))
             ]))),
@@ -508,24 +501,24 @@ class _HandGestureHomeState extends State<HandGestureHome> {
   }
 }
 
-class HandPainter extends CustomPainter {
-  final List<Hand> hands;
+class PosePainter extends CustomPainter {
+  final List<Pose> poses;
   final Size absoluteImageSize;
   final int rotation;
-  HandPainter(this.hands, this.absoluteImageSize, this.rotation);
+  PosePainter(this.poses, this.absoluteImageSize, this.rotation);
   @override
   void paint(Canvas canvas, Size size) {
-    final p = Paint()..color = Colors.cyanAccent..strokeWidth = 2.0;
-    for (final hand in hands) {
-      for (final l in hand.landmarks) {
+    final p = Paint()..color = Colors.redAccent..strokeWidth = 4.0;
+    for (final pose in poses) {
+      pose.landmarks.forEach((_, l) {
         double x = xRatio(l.x, size, absoluteImageSize);
         double y = yRatio(l.y, size, absoluteImageSize);
-        canvas.drawCircle(Offset(x, y), 3, p);
-      }
+        canvas.drawCircle(Offset(x, y), 4, p);
+      });
     }
   }
   double xRatio(double x, Size size, Size abs) => x * size.width / (rotation == 90 || rotation == 270 ? abs.height : abs.width);
   double yRatio(double y, Size size, Size abs) => y * size.height / (rotation == 90 || rotation == 270 ? abs.width : abs.height);
   @override
-  bool shouldRepaint(HandPainter old) => true;
+  bool shouldRepaint(PosePainter old) => true;
 }
