@@ -510,19 +510,76 @@ class PosePainter extends CustomPainter {
   final Size absoluteImageSize;
   final int rotation;
   PosePainter(this.poses, this.absoluteImageSize, this.rotation);
+  
   @override
   void paint(Canvas canvas, Size size) {
-    final p = Paint()..color = Colors.redAccent..strokeWidth = 4.0;
+    final paintLine = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.0
+      ..color = Colors.greenAccent;
+
+    final paintPoint = Paint()
+      ..style = PaintingStyle.fill
+      ..color = Colors.redAccent;
+    
+    final paintTip = Paint()
+      ..style = PaintingStyle.fill
+      ..color = Colors.yellowAccent;
+
     for (final pose in poses) {
-      pose.landmarks.forEach((_, l) {
+      // Draw Head/Body connections for context (optional, but requested focused on hands)
+      // Focus on Hands: connect Wrist -> Thumb, Wrist -> Index, Wrist -> Pinky
+      
+      final Map<PoseLandmarkType, PoseLandmark> landmarks = pose.landmarks;
+      
+      // Pairs to draw lines between
+      final connections = [
+        [PoseLandmarkType.leftWrist, PoseLandmarkType.leftThumb],
+        [PoseLandmarkType.leftWrist, PoseLandmarkType.leftIndex],
+        [PoseLandmarkType.leftWrist, PoseLandmarkType.leftPinky],
+        [PoseLandmarkType.leftIndex, PoseLandmarkType.leftPinky], // Approximate palm
+        
+        [PoseLandmarkType.rightWrist, PoseLandmarkType.rightThumb],
+        [PoseLandmarkType.rightWrist, PoseLandmarkType.rightIndex],
+        [PoseLandmarkType.rightWrist, PoseLandmarkType.rightPinky],
+        [PoseLandmarkType.rightIndex, PoseLandmarkType.rightPinky],
+      ];
+
+      for (final pair in connections) {
+        final start = landmarks[pair[0]];
+        final end = landmarks[pair[1]];
+        
+        if (start != null && end != null) {
+            final x1 = xRatio(start.x, size, absoluteImageSize);
+            final y1 = yRatio(start.y, size, absoluteImageSize);
+            final x2 = xRatio(end.x, size, absoluteImageSize);
+            final y2 = yRatio(end.y, size, absoluteImageSize);
+            canvas.drawLine(Offset(x1, y1), Offset(x2, y2), paintLine);
+        }
+      }
+
+      // Draw all landmarks
+      landmarks.forEach((type, l) {
+        // filter to show only arms/hands/head if we want less clutter, 
+        // but for now showing all is safer to prove detection.
+        // Let's highlight hand tips
         double x = xRatio(l.x, size, absoluteImageSize);
         double y = yRatio(l.y, size, absoluteImageSize);
-        canvas.drawCircle(Offset(x, y), 4, p);
+        
+        if (type == PoseLandmarkType.leftIndex || type == PoseLandmarkType.rightIndex ||
+            type == PoseLandmarkType.leftPinky || type == PoseLandmarkType.rightPinky ||
+            type == PoseLandmarkType.leftThumb || type == PoseLandmarkType.rightThumb) {
+             canvas.drawCircle(Offset(x, y), 6, paintTip);
+        } else {
+             canvas.drawCircle(Offset(x, y), 4, paintPoint);
+        }
       });
     }
   }
+  
   double xRatio(double x, Size size, Size abs) => x * size.width / (rotation == 90 || rotation == 270 ? abs.height : abs.width);
   double yRatio(double y, Size size, Size abs) => y * size.height / (rotation == 90 || rotation == 270 ? abs.width : abs.height);
+  
   @override
   bool shouldRepaint(PosePainter old) => true;
 }
