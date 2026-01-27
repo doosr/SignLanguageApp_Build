@@ -518,6 +518,20 @@ class _HandGestureHomeState extends State<HandGestureHome> {
     return GestureDetector(onTap: () => _translatePhrase(lang), child: Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6), decoration: BoxDecoration(color: sel ? Colors.cyan : Colors.white10, borderRadius: BorderRadius.circular(20)), child: Text(flag, style: const TextStyle(fontSize: 24))));
   }
 
+  bool _isFlashOn = false;
+
+  void _toggleFlash() async {
+    if (_controller == null) return;
+    try {
+      _isFlashOn = !_isFlashOn;
+      // 'torch' mode is for continuous video light
+      await _controller!.setFlashMode(_isFlashOn ? FlashMode.torch : FlashMode.off);
+      setState(() {});
+    } catch (e) {
+      print("Flash error: $e");
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_controller == null || !_controller!.value.isInitialized) return const Scaffold(body: Center(child: CircularProgressIndicator()));
@@ -533,7 +547,15 @@ class _HandGestureHomeState extends State<HandGestureHome> {
               padding: const EdgeInsets.all(8), 
               child: Row(
                 children: [
-                   _buildControlBtn("🗑️", A
+                   _buildControlBtn("🗑️", Colors.red, _clear),
+                   _buildControlBtn("🔦", _isFlashOn ? Colors.amber : Colors.grey, _toggleFlash),
+                   _buildControlBtn("🔊", Colors.green, _speak),
+                   _buildControlBtn("⬅️", Colors.orange, _backspace),
+                   // Space button removed or squeezed? Let's try to fit 5 items or remove one. 
+                   // Space is useful for sentences. Let's keep it.
+                   _buildControlBtn("⌨️", Colors.blue, _addSpace),
+                ]
+              )
             ),
             
             Row(
