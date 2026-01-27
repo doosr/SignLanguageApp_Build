@@ -12,7 +12,14 @@
 -keep class org.tensorflow.lite.gpu.** { *; }
 -dontwarn org.tensorflow.lite.gpu.**
 
+# MediaPipe Tasks rules
+-keep class com.google.mediapipe.** { *; }
+-dontwarn com.google.mediapipe.**
+-dontwarn autovalue.shaded.com.squareup.javapoet.**
+-dontwarn javax.lang.model.**
+
 # General ML Kit rules
 -keep class com.google.android.gms.internal.mlkit_vision_text.** { *; }
 -keep class com.google.mlkit.vision.common.internal.Labels { *; }
 -dontwarn com.google.mlkit.vision.**
+

@@ -216,6 +216,7 @@ class _HandGestureHomeState extends State<HandGestureHome> {
               } else {
                  setState(() {
                    _nativeHands = [];
+                   detectedText = "En attente..."; 
                  });
                  _sequenceBuffer.clear();
               }
@@ -233,6 +234,7 @@ class _HandGestureHomeState extends State<HandGestureHome> {
             setState(() { 
               _poses = poses; 
               _nativeHands = []; // Clear native hands
+              if (poses.isEmpty) detectedText = "En attente...";
             });
             if (poses.isNotEmpty) {
                final features = _extractFeatures(poses);
