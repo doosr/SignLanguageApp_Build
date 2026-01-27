@@ -510,7 +510,7 @@ class PosePainter extends CustomPainter {
   final Size absoluteImageSize;
   final int rotation;
   PosePainter(this.poses, this.absoluteImageSize, this.rotation);
-  
+
   @override
   void paint(Canvas canvas, Size size) {
     final paintLine = Paint()
@@ -518,50 +518,29 @@ class PosePainter extends CustomPainter {
       ..strokeWidth = 3.0
       ..color = Colors.greenAccent;
 
-    final paintPoint = Paint()
-      ..style = PaintingStyle.fill
-      ..color = Colors.redAccent;
-    
-  @override
-  void paint(Canvas canvas, Size size) {
-    // Paints
-    final paintLine = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3.0
-      ..color = Colors.greenAccent; // Lines for 'skeleton'
-
     final paintWrist = Paint()
       ..style = PaintingStyle.fill
-      ..color = Colors.redAccent; // Wrist/Palm center
+      ..color = Colors.redAccent;
 
     final paintTips = Paint()
       ..style = PaintingStyle.fill
-      ..color = Colors.yellowAccent; // Finger tips
+      ..color = Colors.yellowAccent;
 
     for (final pose in poses) {
       final Map<PoseLandmarkType, PoseLandmark> landmarks = pose.landmarks;
 
-      // Extract key hand landmarks available in Body Pose (3 fingerrs only)
-      // Left Hand
       final lw = landmarks[PoseLandmarkType.leftWrist];
       final lt = landmarks[PoseLandmarkType.leftThumb];
       final li = landmarks[PoseLandmarkType.leftIndex];
       final lp = landmarks[PoseLandmarkType.leftPinky];
 
-      // Right Hand
       final rw = landmarks[PoseLandmarkType.rightWrist];
       final rt = landmarks[PoseLandmarkType.rightThumb];
       final ri = landmarks[PoseLandmarkType.rightIndex];
       final rp = landmarks[PoseLandmarkType.rightPinky];
 
-      // Helper to draw connection
       void drawConnection(PoseLandmark? start, PoseLandmark? end) {
         if (start != null && end != null) {
-          final x1 = xRatio(start.x, size, absoluteImageSize);
-          final y1 = yRatio(start.y, size, absoluteImageSize);
-          final x2 = xRatio(start.x, size, absoluteImageSize); // Correction: start drawing from wrist
-          // Wait, logic above was finding coordinates independently.
-          // Let's use the helper explicitly.
           canvas.drawLine(
              Offset(xRatio(start.x, size, absoluteImageSize), yRatio(start.y, size, absoluteImageSize)),
              Offset(xRatio(end.x, size, absoluteImageSize), yRatio(end.y, size, absoluteImageSize)), 
@@ -570,36 +549,34 @@ class PosePainter extends CustomPainter {
         }
       }
 
-      // Draw Left Hand Skeleton
+      // Left
       drawConnection(lw, lt);
       drawConnection(lw, li);
       drawConnection(lw, lp);
-      drawConnection(li, lp); // Connect index to pinky to form a "palm" triangle
+      drawConnection(li, lp);
 
-      // Draw Right Hand Skeleton
+      // Right
       drawConnection(rw, rt);
       drawConnection(rw, ri);
       drawConnection(rw, rp);
       drawConnection(ri, rp);
 
-      // Draw Points (Tips and Wrist)
-      // Left
+      // Points
       if (lw != null) canvas.drawCircle(Offset(xRatio(lw.x, size, absoluteImageSize), yRatio(lw.y, size, absoluteImageSize)), 6, paintWrist);
       if (lt != null) canvas.drawCircle(Offset(xRatio(lt.x, size, absoluteImageSize), yRatio(lt.y, size, absoluteImageSize)), 6, paintTips);
       if (li != null) canvas.drawCircle(Offset(xRatio(li.x, size, absoluteImageSize), yRatio(li.y, size, absoluteImageSize)), 6, paintTips);
       if (lp != null) canvas.drawCircle(Offset(xRatio(lp.x, size, absoluteImageSize), yRatio(lp.y, size, absoluteImageSize)), 6, paintTips);
 
-      // Right
       if (rw != null) canvas.drawCircle(Offset(xRatio(rw.x, size, absoluteImageSize), yRatio(rw.y, size, absoluteImageSize)), 6, paintWrist);
       if (rt != null) canvas.drawCircle(Offset(xRatio(rt.x, size, absoluteImageSize), yRatio(rt.y, size, absoluteImageSize)), 6, paintTips);
       if (ri != null) canvas.drawCircle(Offset(xRatio(ri.x, size, absoluteImageSize), yRatio(ri.y, size, absoluteImageSize)), 6, paintTips);
       if (rp != null) canvas.drawCircle(Offset(xRatio(rp.x, size, absoluteImageSize), yRatio(rp.y, size, absoluteImageSize)), 6, paintTips);
     }
   }
-  
+
   double xRatio(double x, Size size, Size abs) => x * size.width / (rotation == 90 || rotation == 270 ? abs.height : abs.width);
   double yRatio(double y, Size size, Size abs) => y * size.height / (rotation == 90 || rotation == 270 ? abs.width : abs.height);
-  
+
   @override
-  bool shouldRepaint(PosePainter old) => true;
+  bool shouldRepaint(PosePainter oldDelegate) => true;
 }
