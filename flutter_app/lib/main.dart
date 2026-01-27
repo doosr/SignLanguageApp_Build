@@ -369,22 +369,64 @@ class _HandGestureHomeState extends State<HandGestureHome> {
   void _speak() async {
     if (phrase.isNotEmpty) {
       await flutterTts.setLanguage(_ttsLanguageCodes[_selectedLanguage] ?? "fr-FR");
+      await flutterTts.setPitch(1.0);
+      await flutterTts.setSpeechRate(0.5);
       await flutterTts.speak(phrase);
     }
   }
 
   Future<void> _translatePhrase(String newLang) async {
     String oldLangCode = _languageCodes[_selectedLanguage]!;
-    String newLangCode = _languageCodes[newLang]!;
     
     setState(() {
       _selectedLanguage = newLang; // Update UI immediately
     });
-
+    
     if (phrase.isEmpty) return;
     
+    // 1. Try Local Dictionary Match (for Letters/Words)
+    // This fixes the issue where "A" doesn't become "Arabe A" via API
+    String upperPhrase = phrase.toUpperCase().trim();
+    String? localTranslation;
+    
+    // Check Letters Dict
+    if (currentMode == "LETTRES" && _translationsLetters.containsKey(upperPhrase)) {
+       localTranslation = _translationsLetters[upperPhrase]?[newLang];
+    } 
+    // Check Words Dict
+    else if (_translationsWords.containsKey(upperPhrase)) {
+       localTranslation = _translationsWords[upperPhrase]?[newLang];
+    }
+    // Reverse Lookup: if phrase is "Bonjour" (fr) and we switch to Arabe, find Key "BONJOUR"
+    else {
+       // Search in Letters
+       for (var entry in _translationsLetters.entries) {
+         if (entry.value.values.contains(phrase)) {
+           localTranslation = entry.value[newLang];
+           break;
+         }
+       }
+       // Search in Words if not found
+       if (localTranslation == null) {
+         for (var entry in _translationsWords.entries) {
+             if (entry.value.values.contains(phrase)) {
+               localTranslation = entry.value[newLang];
+               break;
+             }
+         }
+       }
+    }
+
+    if (localTranslation != null) {
+      setState(() { phrase = localTranslation!; detectedText = localTranslation!; });
+      _speak();
+      return; 
+    }
+
+    // 2. Fallback to Google Translate API
     try {
-      var translation = await _translator.translate(phrase, from: oldLangCode, to: newLangCode);
+      String newLangCode = _languageCodes[newLang]!;
+      var translation = await _translator.translate(phrase, from: oldLangCode == newLangCode ? 'auto' : oldLangCode, to: newLangCode);
       setState(() {
         phrase = translation.text;
       });
@@ -427,6 +469,10 @@ class _HandGestureHomeState extends State<HandGestureHome> {
   @override
   Widget build(BuildContext context) {
     if (_controller == null || !_controller!.value.isInitialized) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    
+    // Determine if front camera is used for mirroring
+    bool isFrontCamera = _controller!.description.lensDirection == CameraLensDirection.front;
+
     return Scaffold(
       body: SafeArea(
         child: Column(
@@ -489,7 +535,10 @@ class _HandGestureHomeState extends State<HandGestureHome> {
             ])),
             const SizedBox(height: 10),
             Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Row(children: [
-              Expanded(flex: 6, child: ClipRRect(borderRadius: BorderRadius.circular(16), child: Stack(fit: StackFit.expand, children: [CameraPreview(_controller!), CustomPaint(painter: PosePainter(_poses, _controller!.value.previewSize!, _controller!.description.sensorOrientation))]))),
+              Expanded(flex: 6, child: ClipRRect(borderRadius: BorderRadius.circular(16), child: Stack(fit: StackFit.expand, children: [
+                CameraPreview(_controller!), 
+                CustomPaint(painter: PosePainter(_poses, _controller!.value.previewSize!, _controller!.description.sensorOrientation, isFrontCamera))
+              ]))),
               const SizedBox(width: 8),
               Expanded(flex: 4, child: Container(decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white12)), child: ClipRRect(borderRadius: BorderRadius.circular(16), child: (detectedText != "En attente..." && detectedText.isNotEmpty) ? Image.asset('assets/gestures/${detectedText.toUpperCase()}_0.jpg', fit: BoxFit.contain, errorBuilder: (c, e, s) => Center(child: Text(detectedText, style: const TextStyle(color: Colors.white54)))) : const Center(child: Icon(Icons.back_hand, size: 40, color: Colors.white24)))))
             ]))),
@@ -509,13 +558,15 @@ class PosePainter extends CustomPainter {
   final List<Pose> poses;
   final Size absoluteImageSize;
   final int rotation;
-  PosePainter(this.poses, this.absoluteImageSize, this.rotation);
+  final bool isFrontCamera; // Add flag
+
+  PosePainter(this.poses, this.absoluteImageSize, this.rotation, this.isFrontCamera);
 
   @override
   void paint(Canvas canvas, Size size) {
     final paintLine = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 3.0
+      ..strokeWidth = 4.0 // Thicker lines
       ..color = Colors.greenAccent;
 
     final paintWrist = Paint()
@@ -524,7 +575,7 @@ class PosePainter extends CustomPainter {
 
     final paintTips = Paint()
       ..style = PaintingStyle.fill
-      ..color = Colors.yellowAccent;
+      ..color = Colors.yellow;
 
     for (final pose in poses) {
       final Map<PoseLandmarkType, PoseLandmark> landmarks = pose.landmarks;
@@ -542,8 +593,8 @@ class PosePainter extends CustomPainter {
       void drawConnection(PoseLandmark? start, PoseLandmark? end) {
         if (start != null && end != null) {
           canvas.drawLine(
-             Offset(xRatio(start.x, size, absoluteImageSize), yRatio(start.y, size, absoluteImageSize)),
-             Offset(xRatio(end.x, size, absoluteImageSize), yRatio(end.y, size, absoluteImageSize)), 
+             _scalePoint(start.x, start.y, size, absoluteImageSize),
+             _scalePoint(end.x, end.y, size, absoluteImageSize), 
              paintLine
           );
         }
@@ -562,20 +613,31 @@ class PosePainter extends CustomPainter {
       drawConnection(ri, rp);
 
       // Points
-      if (lw != null) canvas.drawCircle(Offset(xRatio(lw.x, size, absoluteImageSize), yRatio(lw.y, size, absoluteImageSize)), 6, paintWrist);
-      if (lt != null) canvas.drawCircle(Offset(xRatio(lt.x, size, absoluteImageSize), yRatio(lt.y, size, absoluteImageSize)), 6, paintTips);
-      if (li != null) canvas.drawCircle(Offset(xRatio(li.x, size, absoluteImageSize), yRatio(li.y, size, absoluteImageSize)), 6, paintTips);
-      if (lp != null) canvas.drawCircle(Offset(xRatio(lp.x, size, absoluteImageSize), yRatio(lp.y, size, absoluteImageSize)), 6, paintTips);
+      if (lw != null) canvas.drawCircle(_scalePoint(lw.x, lw.y, size, absoluteImageSize), 8, paintWrist);
+      if (lt != null) canvas.drawCircle(_scalePoint(lt.x, lt.y, size, absoluteImageSize), 8, paintTips);
+      if (li != null) canvas.drawCircle(_scalePoint(li.x, li.y, size, absoluteImageSize), 8, paintTips);
+      if (lp != null) canvas.drawCircle(_scalePoint(lp.x, lp.y, size, absoluteImageSize), 8, paintTips);
 
-      if (rw != null) canvas.drawCircle(Offset(xRatio(rw.x, size, absoluteImageSize), yRatio(rw.y, size, absoluteImageSize)), 6, paintWrist);
-      if (rt != null) canvas.drawCircle(Offset(xRatio(rt.x, size, absoluteImageSize), yRatio(rt.y, size, absoluteImageSize)), 6, paintTips);
-      if (ri != null) canvas.drawCircle(Offset(xRatio(ri.x, size, absoluteImageSize), yRatio(ri.y, size, absoluteImageSize)), 6, paintTips);
-      if (rp != null) canvas.drawCircle(Offset(xRatio(rp.x, size, absoluteImageSize), yRatio(rp.y, size, absoluteImageSize)), 6, paintTips);
+      if (rw != null) canvas.drawCircle(_scalePoint(rw.x, rw.y, size, absoluteImageSize), 8, paintWrist);
+      if (rt != null) canvas.drawCircle(_scalePoint(rt.x, rt.y, size, absoluteImageSize), 8, paintTips);
+      if (ri != null) canvas.drawCircle(_scalePoint(ri.x, ri.y, size, absoluteImageSize), 8, paintTips);
+      if (rp != null) canvas.drawCircle(_scalePoint(rp.x, rp.y, size, absoluteImageSize), 8, paintTips);
     }
   }
 
-  double xRatio(double x, Size size, Size abs) => x * size.width / (rotation == 90 || rotation == 270 ? abs.height : abs.width);
-  double yRatio(double y, Size size, Size abs) => y * size.height / (rotation == 90 || rotation == 270 ? abs.width : abs.height);
+  Offset _scalePoint(double x, double y, Size size, Size abs) {
+     double scaleX = size.width / (rotation == 90 || rotation == 270 ? abs.height : abs.width);
+     double scaleY = size.height / (rotation == 90 || rotation == 270 ? abs.width : abs.height);
+     
+     double scaledX = x * scaleX;
+     double scaledY = y * scaleY;
+
+     if (isFrontCamera) {
+       scaledX = size.width - scaledX; // Mirroring
+     }
+     
+     return Offset(scaledX, scaledY);
+  }
 
   @override
   bool shouldRepaint(PosePainter oldDelegate) => true;
