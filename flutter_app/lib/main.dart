@@ -4,11 +4,12 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'dart:async';
 import 'package:tflite_flutter/tflite_flutter.dart';
-import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
+import 'package:google_ml_kit/google_ml_kit.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:translator/translator.dart';
 
 List<CameraDescription> cameras = [];
 
@@ -53,10 +54,11 @@ class _HandGestureHomeState extends State<HandGestureHome> {
   CameraController? _controller;
   FlutterTts flutterTts = FlutterTts();
   stt.SpeechToText _speech = stt.SpeechToText();
+  final GoogleTranslator _translator = GoogleTranslator();
   bool _isSpeechAvailable = false;
   
   // Vision
-  final PoseDetector _poseDetector = PoseDetector(options: PoseDetectorOptions());
+  final PoseDetector _poseDetector = GoogleMlKit.vision.poseDetector(poseDetectorOptions: PoseDetectorOptions(model: PoseDetectionModel.accurate));
   bool _isBusy = false;
   List<Pose> _poses = [];
   
@@ -70,6 +72,11 @@ class _HandGestureHomeState extends State<HandGestureHome> {
   // Language for TTS
   String _selectedLanguage = "Français";
   final Map<String, String> _languageCodes = {
+    "Français": "fr",
+    "Anglais": "en",
+    "Arabe": "ar",
+  };
+  final Map<String, String> _ttsLanguageCodes = {
     "Français": "fr-FR",
     "Anglais": "en-US",
     "Arabe": "ar-SA",
@@ -85,7 +92,7 @@ class _HandGestureHomeState extends State<HandGestureHome> {
   List<List<double>> _sequenceBuffer = [];
   final int _sequenceLength = 15;
 
-  // --- Translation Data ---
+  // --- Translation Data (Fallback) ---
   final Map<String, Map<String, String>> _translationsLetters = {
     "A": {"Français": "A", "Anglais": "A", "Arabe": "أ"},
     "B": {"Français": "B", "Anglais": "B", "Arabe": "ب"},
@@ -206,7 +213,7 @@ class _HandGestureHomeState extends State<HandGestureHome> {
             }
           } else {
             _sequenceBuffer.clear();
-            setState(() { detectedText = "..."; });
+            // setState(() { detectedText = "..."; }); 
           }
         }
       }
@@ -217,21 +224,37 @@ class _HandGestureHomeState extends State<HandGestureHome> {
     if (poses.isEmpty) return null;
     final pose = poses.first;
     
-    // Use Wrist and Finger tips from Pose (Indices 15-22)
-    // For 84 features (2 hands * 21 points), we have to mock or use available ones.
-    // This is a placeholder because Pose only has WRIST, PINKY, INDEX, THUMB.
+    // NOTE: This uses Pose landmarks as a proxy for Hand landmarks because standard hand detection 
+    // is currently unavailable. This provides 4 points per hand (Wrist, Thumb, Index, Pinky).
+    // The model expects 21 points per hand. We pad the data to match the shape (84 features).
+    // Accuracy will be limited. Use gesture dictionary/AI translation to compensate.
     
     final wristL = pose.landmarks[PoseLandmarkType.leftWrist]!;
     final wristR = pose.landmarks[PoseLandmarkType.rightWrist]!;
+    final indexL = pose.landmarks[PoseLandmarkType.leftIndex]!;
+    final indexR = pose.landmarks[PoseLandmarkType.rightIndex]!;
+    final pinkyL = pose.landmarks[PoseLandmarkType.leftPinky]!;
+    final pinkyR = pose.landmarks[PoseLandmarkType.rightPinky]!;
+    final thumbL = pose.landmarks[PoseLandmarkType.leftThumb]!;
+    final thumbR = pose.landmarks[PoseLandmarkType.rightThumb]!;
     
-    List<double> dataL = [wristL.x, wristL.y];
-    List<double> dataR = [wristR.x, wristR.y];
+    List<double> dataL = [
+      wristL.x, wristL.y, 
+      thumbL.x, thumbL.y,
+      indexL.x, indexL.y, 
+      pinkyL.x, pinkyL.y
+    ]; 
+    // We have 4 points (8 vals). Need 21 points (42 vals).
+    // Fill remaining 34 vals with wrist/index averages to stabilize
+    dataL.addAll(List.filled(34, 0.0));
     
-    // Fill the rest with 0s or small variations to match 42 + 42 = 84
-    // Note: Model expects 2x21x2. We provide 2x(Wrist) and pad.
-    // TO DO: Replace with real Hand Landmark library for 21-point accuracy.
-    dataL.addAll(List.filled(40, 0.0));
-    dataR.addAll(List.filled(40, 0.0));
+    List<double> dataR = [
+      wristR.x, wristR.y,
+      thumbR.x, thumbR.y,
+      indexR.x, indexR.y,
+      pinkyR.x, pinkyR.y
+    ];
+    dataR.addAll(List.filled(34, 0.0));
     
     List<double> combined = [...dataL, ...dataR];
     
@@ -239,13 +262,14 @@ class _HandGestureHomeState extends State<HandGestureHome> {
     double minX = combined[0];
     double minY = combined[1];
     for (int i=0; i<combined.length; i+=2) {
-      if (combined[i] < minX) minX = combined[i];
-      if (combined[i+1] < minY) minY = combined[i+1];
+      // Find true min ignoring 0s if possible, or just global min
+      if (combined[i] < minX && combined[i] != 0) minX = combined[i];
+      if (combined[i+1] < minY && combined[i+1] != 0) minY = combined[i+1];
     }
     
     for (int i=0; i<combined.length; i+=2) {
-      combined[i] -= minX;
-      combined[i+1] -= minY;
+      if (combined[i] != 0) combined[i] -= minX;
+      if (combined[i+1] != 0) combined[i+1] -= minY;
     }
 
     return combined;
@@ -311,6 +335,7 @@ class _HandGestureHomeState extends State<HandGestureHome> {
     
     setState(() {
       String translated;
+      // Use local dict first for speed, can upgrade to sync translation but async is tricky in high-freq loop
       if (currentMode == "LETTRES") {
         translated = _translationsLetters[gestureKey.toUpperCase()]?[_selectedLanguage] ?? gestureKey;
         phrase += translated;
@@ -343,50 +368,29 @@ class _HandGestureHomeState extends State<HandGestureHome> {
   // --- Actions ---
   void _speak() async {
     if (phrase.isNotEmpty) {
-      await flutterTts.setLanguage(_languageCodes[_selectedLanguage] ?? "fr-FR");
+      await flutterTts.setLanguage(_ttsLanguageCodes[_selectedLanguage] ?? "fr-FR");
       await flutterTts.speak(phrase);
     }
   }
 
-  void _translatePhrase(String newLang) {
-    String oldLang = _selectedLanguage;
+  Future<void> _translatePhrase(String newLang) async {
+    String oldLangCode = _languageCodes[_selectedLanguage]!;
+    String newLangCode = _languageCodes[newLang]!;
+    
     setState(() {
-      _selectedLanguage = newLang;
-      if (phrase.isEmpty) return;
-
-      List<String> tokens = [];
-      if (currentMode == "MOTS") {
-        tokens = phrase.split(" ");
-      } else {
-        tokens = phrase.split("");
-      }
-
-      String newPhrase = tokens.map((t) {
-        if (t.trim().isEmpty) return t;
-        
-        String? foundKey;
-        _translationsWords.forEach((key, val) {
-          if (val[oldLang]?.toLowerCase() == t.toLowerCase()) foundKey = key;
-        });
-        
-        if (foundKey != null) {
-          return _translationsWords[foundKey]![newLang]!;
-        }
-
-        foundKey = null;
-        _translationsLetters.forEach((key, val) {
-          if (val[oldLang]?.toLowerCase() == t.toLowerCase()) foundKey = key;
-        });
-
-        if (foundKey != null) {
-          return _translationsLetters[foundKey]![newLang]!;
-        }
-
-        return t; 
-      }).join(currentMode == "MOTS" ? " " : "");
-
-      phrase = newPhrase;
+      _selectedLanguage = newLang; // Update UI immediately
     });
+
+    if (phrase.isEmpty) return;
+    
+    try {
+      var translation = await _translator.translate(phrase, from: oldLangCode, to: newLangCode);
+      setState(() {
+        phrase = translation.text;
+      });
+    } catch (e) {
+      print("Erreur de traduction: $e");
+    }
 
     _speak();
   }

@@ -15,27 +15,20 @@ dependencies:
   camera: ^0.10.5+9
   tflite_flutter: ^0.10.1 # Pour exécuter nos modèles convertis
 
-  google_mlkit_pose_detection: ^0.10.0
-  image_picker: ^1.0.7
-
-  
-  # UI Modern
-  google_fonts: ^6.1.0
-  flutter_animate: ^4.5.0
-  percent_indicator: ^4.2.3 # Pour la barre de progression validation
-  
-  # Audio / Parole
-  flutter_tts: ^3.8.3
-  speech_to_text: ^6.6.0
-  
-  # Connectivité
-  http: ^1.2.0
-  web_socket_channel: ^2.4.0 # Pour flux ESP32 rapide
-  permission_handler: ^11.3.0
-  
   # Utils
   path_provider: ^2.1.2
   shared_preferences: ^2.2.2
+  translator: ^1.0.4+1
+  google_ml_kit: ^0.20.0
+  google_fonts: ^6.2.0
+  flutter_animate: ^4.5.2
+  percent_indicator: ^4.2.5
+  image_picker: ^1.0.8
+  flutter_tts: ^4.0.2
+  speech_to_text: ^6.6.2
+  http: ^1.2.0
+  web_socket_channel: ^2.4.0
+  permission_handler: ^11.3.1
 
 dev_dependencies:
   flutter_test:
