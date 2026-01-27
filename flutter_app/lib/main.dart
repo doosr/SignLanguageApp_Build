@@ -171,7 +171,12 @@ class _HandGestureHomeState extends State<HandGestureHome> {
     if (!isListening) {
       if (await _speech.initialize()) {
         setState(() => isListening = true);
-        _speech.listen(onResult: (val) => setState(() => phrase = val.recognizedWords));
+        // Listen in the currently selected language
+        String locale = _ttsLanguageCodes[_selectedLanguage] ?? "fr-FR";
+        _speech.listen(
+          localeId: locale,
+          onResult: (val) => setState(() => phrase = val.recognizedWords)
+        );
       }
     } else {
       setState(() => isListening = false);
@@ -224,11 +229,6 @@ class _HandGestureHomeState extends State<HandGestureHome> {
     if (poses.isEmpty) return null;
     final pose = poses.first;
     
-    // NOTE: This uses Pose landmarks as a proxy for Hand landmarks because standard hand detection 
-    // is currently unavailable. This provides 4 points per hand (Wrist, Thumb, Index, Pinky).
-    // The model expects 21 points per hand. We pad the data to match the shape (84 features).
-    // Accuracy will be limited. Use gesture dictionary/AI translation to compensate.
-    
     final wristL = pose.landmarks[PoseLandmarkType.leftWrist]!;
     final wristR = pose.landmarks[PoseLandmarkType.rightWrist]!;
     final indexL = pose.landmarks[PoseLandmarkType.leftIndex]!;
@@ -244,8 +244,6 @@ class _HandGestureHomeState extends State<HandGestureHome> {
       indexL.x, indexL.y, 
       pinkyL.x, pinkyL.y
     ]; 
-    // We have 4 points (8 vals). Need 21 points (42 vals).
-    // Fill remaining 34 vals with wrist/index averages to stabilize
     dataL.addAll(List.filled(34, 0.0));
     
     List<double> dataR = [
@@ -258,11 +256,9 @@ class _HandGestureHomeState extends State<HandGestureHome> {
     
     List<double> combined = [...dataL, ...dataR];
     
-    // Normalize relative to min
     double minX = combined[0];
     double minY = combined[1];
     for (int i=0; i<combined.length; i+=2) {
-      // Find true min ignoring 0s if possible, or just global min
       if (combined[i] < minX && combined[i] != 0) minX = combined[i];
       if (combined[i+1] < minY && combined[i+1] != 0) minY = combined[i+1];
     }
@@ -330,21 +326,35 @@ class _HandGestureHomeState extends State<HandGestureHome> {
     }
   }
 
-  void _onGestureDetected(String gestureKey) {
+  Future<void> _onGestureDetected(String gestureKey) async {
     if (gestureKey.isEmpty) return;
     
+    String translated = gestureKey;
+    String targetLang = _selectedLanguage;
+
+    // 1. Try Local Dict
+    if (currentMode == "LETTRES") {
+      translated = _translationsLetters[gestureKey.toUpperCase()]?[targetLang] ?? gestureKey;
+    } else {
+      translated = _translationsWords[gestureKey.toUpperCase()]?[targetLang] ?? gestureKey;
+    }
+
+    // 2. If Local Dict failed (same result) and Language is NOT French (assuming source is Fr/En), try API
+    // We assume default labels are EN or FR. If target is AR, we definitely want translation.
+    if (translated == gestureKey && targetLang != "Français" && targetLang != "Anglais") {
+       try {
+         // Translate from Auto to Target
+         var gTrans = await _translator.translate(gestureKey, to: _languageCodes[targetLang]!);
+         translated = gTrans.text;
+       } catch (e) {
+         print("API Trans Error: $e");
+       }
+    }
+
+    if (!mounted) return;
     setState(() {
-      String translated;
-      // Use local dict first for speed, can upgrade to sync translation but async is tricky in high-freq loop
-      if (currentMode == "LETTRES") {
-        translated = _translationsLetters[gestureKey.toUpperCase()]?[_selectedLanguage] ?? gestureKey;
-        phrase += translated;
-        detectedText = translated;
-      } else {
-        translated = _translationsWords[gestureKey.toUpperCase()]?[_selectedLanguage] ?? gestureKey;
-        phrase += (phrase.isEmpty ? "" : " ") + translated;
-        detectedText = translated;
-      }
+      phrase += (currentMode == "MOTS" && phrase.isNotEmpty ? " " : "") + translated;
+      detectedText = translated;
     });
     
     _speak();
@@ -481,12 +491,7 @@ class _HandGestureHomeState extends State<HandGestureHome> {
               padding: const EdgeInsets.all(8), 
               child: Row(
                 children: [
-                   _buildControlBtn("🗑️", Colors.red, _clear),
-                   _buildControlBtn("🔊", Colors.green, _speak),
-                   _buildControlBtn("⬅️", Colors.orange, _backspace),
-                   _buildControlBtn("⌨️", Colors.blue, _addSpace),
-                ]
-              )
+                   _buildControlBtn("🗑️", A
             ),
             
             Row(
