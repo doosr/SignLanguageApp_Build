@@ -15,7 +15,7 @@ dependencies:
   camera: ^0.10.5+9
   tflite_flutter: ^0.10.1 # Pour exécuter nos modèles convertis
 
-  google_mlkit_pose_detection: ^0.10.0 
+  hand_landmarker: ^0.0.3 
 
   image_picker: ^1.0.7
 

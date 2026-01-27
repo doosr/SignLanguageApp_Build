@@ -3,14 +3,12 @@ import 'package:camera/camera.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'dart:async';
-// TFLite
 import 'package:tflite_flutter/tflite_flutter.dart';
-import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
+import 'package:hand_landmarker/hand_landmarker.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
-
 
 List<CameraDescription> cameras = [];
 
@@ -37,7 +35,7 @@ class MyApp extends StatelessWidget {
           brightness: Brightness.dark,
         ),
         useMaterial3: true,
-        scaffoldBackgroundColor: const Color(0xFF0D0D1A), // Dark blue-black
+        scaffoldBackgroundColor: const Color(0xFF0D0D1A),
       ),
       home: const HandGestureHome(),
     );
@@ -58,9 +56,9 @@ class _HandGestureHomeState extends State<HandGestureHome> {
   bool _isSpeechAvailable = false;
   
   // Vision
-  final PoseDetector _poseDetector = PoseDetector(options: PoseDetectorOptions());
+  late HandLandmarker _handLandmarker;
   bool _isBusy = false;
-  List<Pose> _poses = [];
+  List<Hand> _hands = [];
   
   // State
   String detectedText = "En attente...";
@@ -82,6 +80,10 @@ class _HandGestureHomeState extends State<HandGestureHome> {
   Interpreter? _interpreterWords;
   List<String> _labelsLetters = [];
   List<String> _labelsWords = [];
+
+  // Sequence buffer for Words
+  List<List<double>> _sequenceBuffer = [];
+  final int _sequenceLength = 15;
 
   // --- Translation Data ---
   final Map<String, Map<String, String>> _translationsLetters = {
@@ -128,10 +130,20 @@ class _HandGestureHomeState extends State<HandGestureHome> {
   @override
   void initState() {
     super.initState();
+    _initHandLandmarker();
     _initCamera();
     _initPermissions();
     _initSpeech();
     _loadModels();
+  }
+
+  Future<void> _initHandLandmarker() async {
+    _handLandmarker = await HandLandmarker.create(
+      numHands: 2,
+      minHandDetectionConfidence: 0.3,
+      minHandPresenceConfidence: 0.3,
+      minTrackingConfidence: 0.3,
+    );
   }
 
   Future<void> _loadModels() async {
@@ -185,62 +197,147 @@ class _HandGestureHomeState extends State<HandGestureHome> {
     if (_isBusy) return;
     _isBusy = true;
     try {
-      final inputImage = _inputImageFromCameraImage(image);
-      if (inputImage != null) {
-        final poses = await _poseDetector.processImage(inputImage);
-        if (mounted) {
-           setState(() { 
-             _poses = poses; 
-             // Simulation de détection si on voit un corps/main
-             if (poses.isNotEmpty) {
-                detectedText = "Geste...";
-                // Uniquement pour la démo: détection auto après 1s de fixité
-                // Dans le vrai projet, c'est ici qu'on appelle _interpreter.run()
-             } else {
-                detectedText = "...";
-             }
-           });
+      final hands = await _handLandmarker.processCameraImage(image);
+      if (mounted) {
+        setState(() { 
+          _hands = hands; 
+        });
+
+        if (hands.isNotEmpty) {
+          final features = _extractFeatures(hands);
+          if (features != null) {
+            if (currentMode == "LETTRES") {
+              _runInferenceLetters(features);
+            } else {
+              _runInferenceWords(features);
+            }
+          }
+        } else {
+          _sequenceBuffer.clear();
+          setState(() { detectedText = "..."; });
         }
       }
     } finally { _isBusy = false; }
   }
 
-  // Cette méthode est appelée quand l'IA reconnaît un signe (ex: 'A' ou 'Bonjour')
+  List<double>? _extractFeatures(List<Hand> hands) {
+    List<double> x_List = [];
+    List<double> y_List = [];
+    
+    // Sort hands by x-coordinate (like in Python)
+    hands.sort((a, b) => a.landmarks[0].x.compareTo(b.landmarks[0].x));
+
+    for (var hand in hands) {
+      for (var landmark in hand.landmarks) {
+        x_List.add(landmark.x);
+        y_List.add(landmark.y);
+      }
+    }
+
+    if (x_List.isEmpty) return null;
+
+    double minX = x_List.reduce((a, b) => a < b ? a : b);
+    double minY = y_List.reduce((a, b) => a < b ? a : b);
+
+    List<double> dataAux = [];
+    for (var hand in hands) {
+      for (var landmark in hand.landmarks) {
+        dataAux.add(landmark.x - minX);
+        dataAux.add(landmark.y - minY);
+      }
+    }
+
+    // Padding if only one hand
+    if (dataAux.length == 42) {
+      dataAux.addAll(List.filled(42, 0.0));
+    }
+
+    return dataAux.length == 84 ? dataAux : null;
+  }
+
+  void _runInferenceLetters(List<double> features) {
+    if (_interpreterLetters == null) return;
+    var input = [features];
+    var output = List.filled(1, List.filled(_labelsLetters.length, 0.0));
+    _interpreterLetters!.run(input, output);
+
+    int maxIdx = 0;
+    double maxProb = -1.0;
+    for (int i = 0; i < output[0].length; i++) {
+      if (output[0][i] > maxProb) {
+        maxProb = output[0][i];
+        maxIdx = i;
+      }
+    }
+
+    if (maxProb > 0.70) {
+      String label = _labelsLetters[maxIdx];
+      if (detectedText != label) {
+         _onGestureDetected(label);
+      }
+    }
+  }
+
+  void _runInferenceWords(List<double> features) {
+    if (_interpreterWords == null) return;
+    _sequenceBuffer.add(features);
+    if (_sequenceBuffer.length > _sequenceLength) {
+      _sequenceBuffer.removeAt(0);
+    }
+
+    if (_sequenceBuffer.length == _sequenceLength) {
+      var flattenedSequence = _sequenceBuffer.expand((f) => f).toList();
+      var input = [flattenedSequence];
+      var output = List.filled(1, List.filled(_labelsWords.length, 0.0));
+      _interpreterWords!.run(input, output);
+
+      int maxIdx = 0;
+      double maxProb = -1.0;
+      for (int i = 0; i < output[0].length; i++) {
+        if (output[0][i] > maxProb) {
+          maxProb = output[0][i];
+          maxIdx = i;
+        }
+      }
+
+      if (maxProb > 0.85) {
+        String label = _labelsWords[maxIdx];
+        if (detectedText != label) {
+           _onGestureDetected(label);
+           _sequenceBuffer.clear(); // Clear so we don't trigger twice
+        }
+      }
+    }
+  }
+
   void _onGestureDetected(String gestureKey) {
     if (gestureKey.isEmpty) return;
     
     setState(() {
       String translated;
       if (currentMode == "LETTRES") {
-        // 'A' -> 'أ' (si Arabe)
         translated = _translationsLetters[gestureKey.toUpperCase()]?[_selectedLanguage] ?? gestureKey;
         phrase += translated;
         detectedText = translated;
       } else {
-        // 'BONJOUR' -> 'مرحبا' (si Arabe)
         translated = _translationsWords[gestureKey.toUpperCase()]?[_selectedLanguage] ?? gestureKey;
         phrase += (phrase.isEmpty ? "" : " ") + translated;
         detectedText = translated;
       }
     });
     
-    // Vocaliser le nouveau mot détecté
     _speak();
   }
 
-
   InputImage? _inputImageFromCameraImage(CameraImage image) {
-    final sensorOrientation = _controller!.description.sensorOrientation;
-    final InputImageRotation rotation = InputImageRotationValue.fromRawValue(sensorOrientation) ?? InputImageRotation.rotation0deg;
-    final InputImageFormat format = InputImageFormatValue.fromRawValue(image.format.raw) ?? InputImageFormat.nv21;
-    final plane = image.planes[0];
-    return InputImage.fromBytes(bytes: plane.bytes, metadata: InputImageMetadata(size: Size(image.width.toDouble(), image.height.toDouble()), rotation: rotation, format: format, bytesPerRow: plane.bytesPerRow));
+    // This is no longer used by our new hand landmarker which handles CameraImage directly
+    return null;
   }
 
   @override
   void dispose() {
     _controller?.dispose();
-    _poseDetector.close();
+    _handLandmarker.dispose();
     super.dispose();
   }
 
@@ -257,33 +354,62 @@ class _HandGestureHomeState extends State<HandGestureHome> {
     setState(() {
       _selectedLanguage = newLang;
       if (phrase.isEmpty) return;
-      if (currentMode == "LETTRES") {
-        String newPhrase = "";
-        for (int i = 0; i < phrase.length; i++) {
-          String char = phrase[i];
-          bool found = false;
-          _translationsLetters.forEach((key, value) { if (value[oldLang] == char) { newPhrase += value[newLang]!; found = true; } });
-          newPhrase += found ? "" : char;
-        }
-        phrase = newPhrase;
+
+      // Split the phrase into tokens
+      // If it's words mode, it's space separated. In letters, it's char by char.
+      // But we can try to find matching tokens in our dictionaries.
+      
+      List<String> tokens = [];
+      if (currentMode == "MOTS") {
+        tokens = phrase.split(" ");
       } else {
-        phrase = phrase.split(" ").map((w) {
-          String trans = w;
-          _translationsWords.forEach((k, v) { 
-            if (v[oldLang]?.toLowerCase() == w.toLowerCase()) trans = v[newLang]!; 
-          });
-          return trans;
-        }).join(" ");
+        tokens = phrase.split("");
       }
+
+      String newPhrase = tokens.map((t) {
+        if (t.trim().isEmpty) return t;
+        
+        // Search in words map first
+        String? foundKey;
+        _translationsWords.forEach((key, val) {
+          if (val[oldLang]?.toLowerCase() == t.toLowerCase()) foundKey = key;
+        });
+        
+        if (foundKey != null) {
+          return _translationsWords[foundKey]![newLang]!;
+        }
+
+        // Search in letters map
+        foundKey = null;
+        _translationsLetters.forEach((key, val) {
+          if (val[oldLang]?.toLowerCase() == t.toLowerCase()) foundKey = key;
+        });
+
+        if (foundKey != null) {
+          return _translationsLetters[foundKey]![newLang]!;
+        }
+
+        return t; // Keep as is if not found
+      }).join(currentMode == "MOTS" ? " " : "");
+
+      phrase = newPhrase;
     });
 
-    // Lecture automatique lors du changement de langue
     _speak();
   }
 
-
   void _clear() => setState(() { phrase = ""; detectedText = ""; });
-  void _backspace() => setState(() { if (phrase.isNotEmpty) phrase = phrase.substring(0, phrase.length - 1); });
+  void _backspace() => setState(() { 
+    if (phrase.isNotEmpty) {
+      if (currentMode == "MOTS" && phrase.contains(" ")) {
+        List<String> parts = phrase.split(" ");
+        parts.removeLast();
+        phrase = parts.join(" ");
+      } else {
+        phrase = phrase.substring(0, phrase.length - 1);
+      }
+    }
+  });
   void _addSpace() => setState(() { phrase += " "; });
 
   // --- UI Helpers ---
@@ -301,7 +427,6 @@ class _HandGestureHomeState extends State<HandGestureHome> {
     return GestureDetector(onTap: () => _translatePhrase(lang), child: Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6), decoration: BoxDecoration(color: sel ? Colors.cyan : Colors.white10, borderRadius: BorderRadius.circular(20)), child: Text(flag, style: const TextStyle(fontSize: 24))));
   }
 
-
   @override
   Widget build(BuildContext context) {
     if (_controller == null || !_controller!.value.isInitialized) return const Scaffold(body: Center(child: CircularProgressIndicator()));
@@ -309,30 +434,27 @@ class _HandGestureHomeState extends State<HandGestureHome> {
       body: SafeArea(
         child: Column(
           children: [
-            // 1. Contrôles avec Emojis
             Padding(
               padding: const EdgeInsets.all(8), 
               child: Row(
                 children: [
-                   _buildControlBtn("🗑️", Colors.red, _clear), // Clear
-                   _buildControlBtn("🔊", Colors.green, _speak), // Speak
-                   _buildControlBtn("⬅️", Colors.orange, _backspace), // Back
-                   _buildControlBtn("⌨️", Colors.blue, _addSpace), // Space
+                   _buildControlBtn("🗑️", Colors.red, _clear),
+                   _buildControlBtn("🔊", Colors.green, _speak),
+                   _buildControlBtn("⬅️", Colors.orange, _backspace),
+                   _buildControlBtn("⌨️", Colors.blue, _addSpace),
                 ]
               )
             ),
             
-            // 2. Modes avec Emojis
             Row(
               children: [
-                _buildModeBtn("🔤", "LETTRES"), // Mode Lettres
-                _buildModeBtn("📚", "MOTS"),    // Mode Mots
+                _buildModeBtn("🔤", "LETTRES"),
+                _buildModeBtn("📚", "MOTS"),
               ]
             ),
             
             const SizedBox(height: 5),
             
-            // 3. Langues avec Drapeaux
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly, 
               children: [
@@ -347,7 +469,7 @@ class _HandGestureHomeState extends State<HandGestureHome> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text("Phrase (${_selectedLanguage}): $phrase", style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                  Expanded(child: Text("Phrase (${_selectedLanguage}): $phrase", style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold))),
                   if (phrase.isNotEmpty) 
                     IconButton(
                       icon: const Icon(Icons.volume_up, color: Colors.cyan, size: 20),
@@ -360,7 +482,8 @@ class _HandGestureHomeState extends State<HandGestureHome> {
               const SizedBox(height: 8),
               SizedBox(height: 80, child: ListView.builder(scrollDirection: Axis.horizontal, reverse: _selectedLanguage == "Arabe", itemCount: phrase.length, itemBuilder: (c, i) {
                 String char = phrase[i]; if (char == " ") return const SizedBox(width: 20);
-                String k = char.toUpperCase(); _translationsLetters.forEach((key, val) { if (val.values.contains(char)) k = key; });
+                String k = char.toUpperCase();
+                _translationsLetters.forEach((key, val) { if (val.values.contains(char)) k = key; });
                 return Container(margin: const EdgeInsets.only(right: 8), width: 60, decoration: BoxDecoration(color: Colors.black38, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.white10)), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                   Expanded(child: ClipRRect(borderRadius: const BorderRadius.vertical(top: Radius.circular(8)), child: Image.asset('assets/gestures/${k}_0.jpg', fit: BoxFit.cover, errorBuilder: (c, e, s) => const Center(child: Icon(Icons.error_outline, size: 10, color: Colors.white24))))),
                   Container(padding: const EdgeInsets.symmetric(vertical: 2), child: Text(char, style: const TextStyle(color: Colors.cyanAccent, fontSize: 10, fontWeight: FontWeight.bold))),
@@ -369,7 +492,7 @@ class _HandGestureHomeState extends State<HandGestureHome> {
             ])),
             const SizedBox(height: 10),
             Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Row(children: [
-              Expanded(flex: 6, child: ClipRRect(borderRadius: BorderRadius.circular(16), child: Stack(fit: StackFit.expand, children: [CameraPreview(_controller!), CustomPaint(painter: PosePainter(_poses, _controller!.value.previewSize!, _controller!.description.sensorOrientation))]))),
+              Expanded(flex: 6, child: ClipRRect(borderRadius: BorderRadius.circular(16), child: Stack(fit: StackFit.expand, children: [CameraPreview(_controller!), CustomPaint(painter: HandPainter(_hands, _controller!.value.previewSize!, _controller!.description.sensorOrientation))]))),
               const SizedBox(width: 8),
               Expanded(flex: 4, child: Container(decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white12)), child: ClipRRect(borderRadius: BorderRadius.circular(16), child: (detectedText != "En attente..." && detectedText.isNotEmpty) ? Image.asset('assets/gestures/${detectedText.toUpperCase()}_0.jpg', fit: BoxFit.contain, errorBuilder: (c, e, s) => Center(child: Text(detectedText, style: const TextStyle(color: Colors.white54)))) : const Center(child: Icon(Icons.back_hand, size: 40, color: Colors.white24)))))
             ]))),
@@ -385,24 +508,24 @@ class _HandGestureHomeState extends State<HandGestureHome> {
   }
 }
 
-class PosePainter extends CustomPainter {
-  final List<Pose> poses;
+class HandPainter extends CustomPainter {
+  final List<Hand> hands;
   final Size absoluteImageSize;
   final int rotation;
-  PosePainter(this.poses, this.absoluteImageSize, this.rotation);
+  HandPainter(this.hands, this.absoluteImageSize, this.rotation);
   @override
   void paint(Canvas canvas, Size size) {
-    final p = Paint()..color = Colors.redAccent..strokeWidth = 4.0;
-    for (final pose in poses) {
-      pose.landmarks.forEach((_, l) {
+    final p = Paint()..color = Colors.cyanAccent..strokeWidth = 2.0;
+    for (final hand in hands) {
+      for (final l in hand.landmarks) {
         double x = xRatio(l.x, size, absoluteImageSize);
         double y = yRatio(l.y, size, absoluteImageSize);
-        canvas.drawCircle(Offset(x, y), 4, p);
-      });
+        canvas.drawCircle(Offset(x, y), 3, p);
+      }
     }
   }
   double xRatio(double x, Size size, Size abs) => x * size.width / (rotation == 90 || rotation == 270 ? abs.height : abs.width);
   double yRatio(double y, Size size, Size abs) => y * size.height / (rotation == 90 || rotation == 270 ? abs.width : abs.height);
   @override
-  bool shouldRepaint(PosePainter old) => true;
+  bool shouldRepaint(HandPainter old) => true;
 }

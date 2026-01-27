@@ -12,12 +12,29 @@ if 'matplotlib' not in sys.modules:
     for m in ['matplotlib', 'matplotlib.pyplot', 'matplotlib.collections', 'matplotlib.font_manager']:
         sys.modules[m] = MockModule(m)
 
-import cv2
-import mediapipe as mp
-import numpy as np
+
+try:
+    import cv2
+except ImportError as e:
+    print(f"[CRITICAL] Failed to import cv2: {e}")
+    cv2 = None
+
+try:
+    import mediapipe as mp
+except ImportError as e:
+    print(f"[CRITICAL] Failed to import mediapipe: {e}")
+    mp = None
+
+try:
+    import numpy as np
+except ImportError as e:
+    print(f"[CRITICAL] Failed to import numpy: {e}")
+    np = None
+
 import pickle
 import time
 import os
+
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.floatlayout import FloatLayout
@@ -523,7 +540,7 @@ class HandGestureApp(App):
         print("[INFO] Activation caméra locale...")
         
         # Reset visuel des boutons
-        self.micro_btn.text = "🎤 MICRO"
+        self.micro_btn.text = "MICRO"
         self.micro_btn.canvas.before.children[0].rgba = (0.6, 0.3, 0.9, 1)
         
         # Rendre l'image de geste invisible (pas de fond blanc)

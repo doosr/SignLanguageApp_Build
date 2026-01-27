@@ -6,12 +6,24 @@ try:
     SPEECH_REC_AVAILABLE = True
 except ImportError:
     SPEECH_REC_AVAILABLE = False
+
 import threading
 import time
-import cv2
-import mediapipe as mp
+
+try:
+    import cv2
+except ImportError:
+    cv2 = None
+    print("[WARNING] cv2 non disponible dans speech_to_image_model")
+
+try:
+    import mediapipe as mp
+except ImportError:
+    mp = None
+    print("[WARNING] mediapipe non disponible dans speech_to_image_model")
 
 class SpeechToImageModel:
+
     """
     Modèle unifié pour convertir la Parole -> Image de Geste
     """
