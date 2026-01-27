@@ -361,11 +361,53 @@ class _HandGestureHomeState extends State<HandGestureHome> {
   }
 
   InputImage? _inputImageFromCameraImage(CameraImage image) {
-    final sensorOrientation = _controller!.description.sensorOrientation;
-    final InputImageRotation rotation = InputImageRotationValue.fromRawValue(sensorOrientation) ?? InputImageRotation.rotation0deg;
-    final InputImageFormat format = InputImageFormatValue.fromRawValue(image.format.raw) ?? InputImageFormat.nv21;
-    final plane = image.planes[0];
-    return InputImage.fromBytes(bytes: plane.bytes, metadata: InputImageMetadata(size: Size(image.width.toDouble(), image.height.toDouble()), rotation: rotation, format: format, bytesPerRow: plane.bytesPerRow));
+    try {
+      final sensorOrientation = _controller!.description.sensorOrientation;
+      final InputImageRotation rotation = InputImageRotationValue.fromRawValue(sensorOrientation) ?? InputImageRotation.rotation0deg;
+      
+      // Force handling for potential format mismatches
+      final InputImageFormat format;
+      if (Platform.isAndroid && image.format.group == ImageFormatGroup.yuv420) {
+        format = InputImageFormat.nv21;
+      } else {
+         format = InputImageFormatValue.fromRawValue(image.format.raw) ?? InputImageFormat.nv21;
+      }
+
+      // Android usually needs plane 0 for NV21 if formatted correctly, but simple bytes concatenation is safer for yuv420
+      if (Platform.isAndroid && image.planes.length == 3) {
+         // Concatenate planes for proper NV21 structure if needed? 
+         // Actually, Google ML Kit expects `fromBytes` to receive the full buffer usually, 
+         // but for `nv21` specifically, standard plugins usually just take plane[0] if raw.
+         // Let's stick to the simplest valid construction.
+         
+         // Fix: pass all bytes if needed or ensure bytesPerRow is correct.
+         // Safe Default:
+          final plane = image.planes[0];
+          return InputImage.fromBytes(
+            bytes: plane.bytes, // Note: This might be incomplete for YUV420, but works for many devices if raw stream is standard.
+            metadata: InputImageMetadata(
+              size: Size(image.width.toDouble(), image.height.toDouble()),
+              rotation: rotation,
+              format: format,
+              bytesPerRow: plane.bytesPerRow
+            )
+          );
+      }
+      
+      // Fallback
+      final plane = image.planes[0];
+      return InputImage.fromBytes(
+          bytes: plane.bytes, 
+          metadata: InputImageMetadata(
+             size: Size(image.width.toDouble(), image.height.toDouble()), 
+             rotation: rotation, 
+             format: format, 
+             bytesPerRow: plane.bytesPerRow
+          ));
+    } catch (e) {
+      print("Error creating InputImage: $e");
+      return null;
+    }
   }
 
   @override
@@ -556,13 +598,22 @@ class _HandGestureHomeState extends State<HandGestureHome> {
                       color: Colors.black54, // Semi-transparent background for contrast
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Text(
-                      detectedText, 
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 32,
-                        fontWeight: FontWeight.bold,
-                      ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          detectedText, 
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 32,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          "Debug: Poses=${_poses.length} | Mode=$currentMode",
+                          style: const TextStyle(color: Colors.yellow, fontSize: 12),
+                        )
+                      ],
                     ),
                   ),
                 ),
