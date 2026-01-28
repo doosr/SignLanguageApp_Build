@@ -188,11 +188,11 @@ class _HandGestureHomeState extends State<HandGestureHome> {
   Future<void> _loadModels() async {
     try {
       print("📦 Loading model_letters.tflite..."); // DEBUG
-      _interpreterLetters = await Interpreter.fromAsset('model_letters.tflite');
+      _interpreterLetters = await Interpreter.fromAsset('assets/model_letters.tflite');
       print("✅ model_letters loaded"); // DEBUG
       
       print("📦 Loading model_words.tflite..."); // DEBUG
-      _interpreterWords = await Interpreter.fromAsset('model_words.tflite');
+      _interpreterWords = await Interpreter.fromAsset('assets/model_words.tflite');
       print("✅ model_words loaded"); // DEBUG
 
       String labelsLettersRaw = await rootBundle.loadString('assets/model_letters_labels.txt');
