@@ -198,7 +198,7 @@ class _HandGestureHomeState extends State<HandGestureHome> {
   void _initCamera() {
     if (cameras.isEmpty) return;
     CameraDescription selectedCamera = cameras.firstWhere((cam) => cam.lensDirection == CameraLensDirection.front, orElse: () => cameras[0]);
-    _controller = CameraController(selectedCamera, ResolutionPreset.medium, enableAudio: false);
+    _controller = CameraController(selectedCamera, ResolutionPreset.low, enableAudio: false); // Low resolution for better performance
     _controller?.initialize().then((_) {
       if (!mounted) return;
       _controller?.startImageStream(_processCameraImage);
