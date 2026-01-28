@@ -340,7 +340,7 @@ class _HandGestureHomeState extends State<HandGestureHome> {
       }
     }
 
-    if (maxProb > 0.40) { // Match Python threshold (0.4)
+    if (maxProb > 0.80) { // Increased threshold for better accuracy (was 0.40)
       String label = _labelsLetters[maxIdx];
       
       // Stabilization logic (Voting)
@@ -789,19 +789,42 @@ class HandPainter extends CustomPainter {
         }
       }
       
-      // Paint for each finger to make it colorful
-      final paintThumb = Paint()..color = Colors.orangeAccent..strokeWidth = 3.0..style = PaintingStyle.stroke;
-      final paintIndex = Paint()..color = Colors.greenAccent..strokeWidth = 3.0..style = PaintingStyle.stroke;
-      final paintMiddle = Paint()..color = Colors.blueAccent..strokeWidth = 3.0..style = PaintingStyle.stroke;
-      final paintRing = Paint()..color = Colors.pinkAccent..strokeWidth = 3.0..style = PaintingStyle.stroke;
-      final paintPinky = Paint()..color = Colors.purpleAccent..strokeWidth = 3.0..style = PaintingStyle.stroke;
+      // Show landmarks points
+      final paintPalm = Paint()..color = Colors.white70..strokeWidth = 2.0..style = PaintingStyle.stroke;
+      final paintPoint = Paint()..color = Colors.cyanAccent..strokeWidth = 2.0;
 
-      // Show only points as per user request (like inference_classifier.py)
-      /* 
-      // Lines removed to match inference_classifier.py
+      // Draw Connections (Fingers)
       draw(0, 1, paintPalm);
-      ...
-      */
+      draw(0, 5, paintPalm);
+      draw(0, 17, paintPalm);
+      draw(5, 9, paintPalm);
+      draw(9, 13, paintPalm);
+      draw(13, 17, paintPalm);
+
+      // Thumb
+      draw(1, 2, paintThumb);
+      draw(2, 3, paintThumb);
+      draw(3, 4, paintThumb);
+
+      // Index
+      draw(5, 6, paintIndex);
+      draw(6, 7, paintIndex);
+      draw(7, 8, paintIndex);
+
+      // Middle
+      draw(9, 10, paintMiddle);
+      draw(10, 11, paintMiddle);
+      draw(11, 12, paintMiddle);
+
+      // Ring
+      draw(13, 14, paintRing);
+      draw(14, 15, paintRing);
+      draw(15, 16, paintRing);
+
+      // Pinky
+      draw(17, 18, paintPinky);
+      draw(18, 19, paintPinky);
+      draw(19, 20, paintPinky);
       
       // Draw landmarks points
       for (int i = 0; i < pts.length; i++) {
