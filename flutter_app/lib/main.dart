@@ -340,19 +340,20 @@ class _HandGestureHomeState extends State<HandGestureHome> {
       }
     }
 
-    if (maxProb > 0.80) { // Increased threshold for better accuracy (was 0.40)
+    if (maxProb > 0.85) { // Increased threshold to 0.85 for very high precision
       String label = _labelsLetters[maxIdx];
       
       // Stabilization logic (Voting)
       _letterBuffer.add(label);
-      if (_letterBuffer.length > _bufferSize) _letterBuffer.removeAt(0);
+      if (_letterBuffer.length > 5) _letterBuffer.removeAt(0); // Shorter buffer for faster but stabilized results
 
-      // Check if the majority in buffer is this label
+      // Require consistent detections
       int count = _letterBuffer.where((e) => e == label).length;
-      if (count >= 3 && detectedText != label) {
+      if (count >= 4 && detectedText != label) {
         _onGestureDetected(label);
       }
-    } else {
+    } else if (maxProb < 0.2) {
+      // Clear buffer if confidence is very low to avoid "sticky" predictions
       _letterBuffer.clear();
     }
   }
@@ -788,12 +789,22 @@ class HandPainter extends CustomPainter {
           canvas.drawLine(pts[i], pts[j], paint);
         }
       }
-      
+
       // Show landmarks points
-      final paintPalm = Paint()..color = Colors.white70..strokeWidth = 2.0..style = PaintingStyle.stroke;
-      final paintPoint = Paint()..color = Colors.cyanAccent..strokeWidth = 2.0;
+      final paintPalm = Paint()..color = Colors.white.withOpacity(0.8)..strokeWidth = 3.0..style = PaintingStyle.stroke;
+      final paintPoint = Paint()..color = Colors.white..strokeWidth = 2.0;
+
+      // Define Vibrant Neon Colors for fingers
+      final paintThumb = Paint()..color = const Color(0xFFFF9100)..strokeWidth = 4.0..style = PaintingStyle.stroke..strokeCap = StrokeCap.round; // Orange Neon
+      final paintIndex = Paint()..color = const Color(0xFF00E676)..strokeWidth = 4.0..style = PaintingStyle.stroke..strokeCap = StrokeCap.round; // Green Neon
+      final paintMiddle = Paint()..color = const Color(0xFF2979FF)..strokeWidth = 4.0..style = PaintingStyle.stroke..strokeCap = StrokeCap.round; // Blue Neon
+      final paintRing = Paint()..color = const Color(0xFFFF1744)..strokeWidth = 4.0..style = PaintingStyle.stroke..strokeCap = StrokeCap.round; // Red/Pink Neon
+      final paintPinky = Paint()..color = const Color(0xFFD500F9)..strokeWidth = 4.0..style = PaintingStyle.stroke..strokeCap = StrokeCap.round; // Purple Neon
+      
+      final paintTips = Paint()..color = Colors.white..strokeWidth = 2.0..style = PaintingStyle.fill;
 
       // Draw Connections (Fingers)
+      // Palm / Base
       draw(0, 1, paintPalm);
       draw(0, 5, paintPalm);
       draw(0, 17, paintPalm);
@@ -828,15 +839,25 @@ class HandPainter extends CustomPainter {
       
       // Draw landmarks points
       for (int i = 0; i < pts.length; i++) {
-        // High visibility points
+        Color dotColor = Colors.cyanAccent;
+        double radius = 5;
+        
+        // Color code points by finger
+        if (i >= 1 && i <= 4) dotColor = const Color(0xFFFF9100);
+        else if (i >= 5 && i <= 8) dotColor = const Color(0xFF00E676);
+        else if (i >= 9 && i <= 12) dotColor = const Color(0xFF2979FF);
+        else if (i >= 13 && i <= 16) dotColor = const Color(0xFFFF1744);
+        else if (i >= 17 && i <= 20) dotColor = const Color(0xFFD500F9);
+        else if (i == 0) dotColor = Colors.yellowAccent;
+
+        // Tips highlighting
         if (i == 4 || i == 8 || i == 12 || i == 16 || i == 20) {
-          canvas.drawCircle(pts[i], 8, paintTips); // Even larger tips
-          canvas.drawCircle(pts[i], 3, Paint()..color = Colors.black); // Inner dot
-        } else if (i == 0) {
-          canvas.drawCircle(pts[i], 10, Paint()..color = Colors.yellow); // Very large wrist
-        } else {
-          canvas.drawCircle(pts[i], 5, paintPoint);
+          radius = 7;
+          canvas.drawCircle(pts[i], radius + 2, Paint()..color = Colors.white.withOpacity(0.5));
         }
+
+        canvas.drawCircle(pts[i], radius, Paint()..color = dotColor);
+        canvas.drawCircle(pts[i], 2, Paint()..color = Colors.white);
       }
     }
   }
