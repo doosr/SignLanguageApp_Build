@@ -1,0 +1,4 @@
+Resolving dependencies...
+The current Dart SDK version is 3.2.6.
+
+Because sign_language_app depends on camera >=0.11.0+2 which requires SDK version >=3.3.0 <4.0.0, version solving failed.
