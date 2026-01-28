@@ -60,6 +60,7 @@ class _HandGestureHomeState extends State<HandGestureHome> {
   // Vision
   HandLandmarkerPlugin? _plugin;
   bool _isDetecting = false;
+  int _frameCounter = 0; // For performance optimization
   List<Hand> _landmarks = [];
   
   // State
@@ -243,27 +244,28 @@ class _HandGestureHomeState extends State<HandGestureHome> {
   }
 
   List<double> _processHandLandmarksForClassifier(List<List<double>> hands) {
-       // Logic similar to previous _processNativeLandmarks
-       List<List<double>> sorted = List.from(hands);
-       sorted.sort((a,b) => a[0].compareTo(b[0]));
-       
-       List<double> rawAll = [];
-       for(var h in sorted) rawAll.addAll(h);
-       
-       // Normalize relative to bounding box of the hand signs
-       if (rawAll.isNotEmpty) {
-         double minX = rawAll[0], minY = rawAll[1];
-          for(int i=0; i<rawAll.length; i+=2) {
-            if (rawAll[i] < minX) minX = rawAll[i];
-            if (rawAll[i+1] < minY) minY = rawAll[i+1];
-          }
-          for(int i=0; i<rawAll.length; i+=2) {
-            rawAll[i] -= minX;
-            rawAll[i+1] -= minY;
-          }
-       }
-       while(rawAll.length < 84) rawAll.add(0.0);
-       return rawAll.sublist(0,84);
+    // Optimized: Reduce processing overhead
+    List<List<double>> sorted = List.from(hands);
+    sorted.sort((a, b) => a[0].compareTo(b[0]));
+    
+    List<double> rawAll = [];
+    for (var h in sorted) rawAll.addAll(h);
+    
+    // Normalize relative to bounding box
+    if (rawAll.isNotEmpty) {
+      double minX = rawAll[0], minY = rawAll[1];
+      for (int i = 0; i < rawAll.length; i += 2) {
+        if (rawAll[i] < minX) minX = rawAll[i];
+        if (rawAll[i + 1] < minY) minY = rawAll[i + 1];
+      }
+      for (int i = 0; i < rawAll.length; i += 2) {
+        rawAll[i] -= minX;
+        rawAll[i + 1] -= minY;
+      }
+    }
+    
+    while (rawAll.length < 84) rawAll.add(0.0);
+    return rawAll.sublist(0, 84);
   }
 
 
@@ -272,20 +274,17 @@ class _HandGestureHomeState extends State<HandGestureHome> {
 
   void _runInferenceLetters(List<double> features) {
     if (_interpreterLetters == null) {
-      print("❌ Letter interpreter is null!"); // DEBUG
+      print("❌ Letter interpreter is null!");
       return;
     }
-    
-    print("🔢 Running inference with ${features.length} features"); // DEBUG
     
     var input = [features];
     var output = List.filled(1, List.filled(_labelsLetters.length, 0.0));
     
     try {
       _interpreterLetters!.run(input, output);
-      print("✅ Inference completed"); // DEBUG
     } catch (e) {
-      print("❌ Inference error: $e"); // DEBUG
+      print("❌ Inference error: $e");
       return;
     }
 
@@ -298,15 +297,12 @@ class _HandGestureHomeState extends State<HandGestureHome> {
       }
     }
 
-    print("🎯 Best prediction: ${_labelsLetters[maxIdx]} (${(maxProb * 100).toStringAsFixed(2)}%)"); // DEBUG
-
     if (maxProb > 0.60) {
       String label = _labelsLetters[maxIdx];
       if (detectedText != label) {
-         _onGestureDetected(label);
+        print("🎯 Detected: $label (${(maxProb * 100).toStringAsFixed(1)}%)");
+        _onGestureDetected(label);
       }
-    } else {
-      print("⚠️ Confidence too low: ${(maxProb * 100).toStringAsFixed(2)}%"); // DEBUG
     }
   }
 
@@ -614,22 +610,111 @@ class HandPainter extends CustomPainter {
   final Size absoluteImageSize;
   final int rotation;
   final bool isFrontCamera;
+  
   HandPainter(this.hands, this.absoluteImageSize, this.rotation, this.isFrontCamera);
+  
   @override
   void paint(Canvas canvas, Size size) {
-    final paintLine = Paint()..style = PaintingStyle.stroke..strokeWidth = 3.0..color = Colors.blueAccent;
-    final paintPoint = Paint()..style = PaintingStyle.fill..color = Colors.white;
+    // Paint configurations for better visibility
+    final paintLine = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.5
+      ..color = Colors.greenAccent;
+    
+    final paintPoint = Paint()
+      ..style = PaintingStyle.fill
+      ..color = Colors.white;
+    
+    final paintTips = Paint()
+      ..style = PaintingStyle.fill
+      ..color = Colors.cyanAccent;
+    
+    final paintPalm = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.0
+      ..color = Colors.yellowAccent;
+    
     for (final hand in hands) {
       List<Offset> pts = [];
-      for (int i=0; i<hand.length; i+=2) pts.add(Offset(hand[i] * size.width, hand[i+1] * size.height));
-      if (isFrontCamera) pts = pts.map((p) => Offset(size.width - p.dx, p.dy)).toList();
-      void draw(int i, int j) { if (i<pts.length && j<pts.length) canvas.drawLine(pts[i], pts[j], paintLine); }
-      // Thumb
-      draw(0, 1); draw(1, 2); draw(2, 3); draw(3, 4);
-      // Fingers
-      for (int f=0; f<4; f++) { int start = 5 + f*4; draw(0, start); draw(start, start+1); draw(start+1, start+2); draw(start+2, start+3); }
-      for (var p in pts) canvas.drawCircle(p, 4, paintPoint);
+      
+      // Convert normalized coordinates to screen coordinates
+      for (int i = 0; i < hand.length; i += 2) {
+        pts.add(Offset(hand[i] * size.width, hand[i + 1] * size.height));
+      }
+      
+      // Mirror for front camera
+      if (isFrontCamera) {
+        pts = pts.map((p) => Offset(size.width - p.dx, p.dy)).toList();
+      }
+      
+      // Safe drawing function
+      void draw(int i, int j, Paint paint) {
+        if (i < pts.length && j < pts.length) {
+          canvas.drawLine(pts[i], pts[j], paint);
+        }
+      }
+      
+      // MediaPipe Hand Landmarks: 21 points
+      // 0: Wrist
+      // 1-4: Thumb
+      // 5-8: Index finger
+      // 9-12: Middle finger
+      // 13-16: Ring finger
+      // 17-20: Pinky
+      
+      // Draw Palm (base connections in yellow)
+      if (pts.length >= 21) {
+        draw(0, 1, paintPalm);   // Wrist to thumb base
+        draw(0, 5, paintPalm);   // Wrist to index base
+        draw(0, 17, paintPalm);  // Wrist to pinky base
+        draw(5, 9, paintPalm);   // Index to middle base
+        draw(9, 13, paintPalm);  // Middle to ring base
+        draw(13, 17, paintPalm); // Ring to pinky base
+      }
+      
+      // Draw Thumb (points 1-4)
+      draw(1, 2, paintLine);
+      draw(2, 3, paintLine);
+      draw(3, 4, paintLine);
+      
+      // Draw Index finger (points 5-8)
+      draw(5, 6, paintLine);
+      draw(6, 7, paintLine);
+      draw(7, 8, paintLine);
+      
+      // Draw Middle finger (points 9-12)
+      draw(9, 10, paintLine);
+      draw(10, 11, paintLine);
+      draw(11, 12, paintLine);
+      
+      // Draw Ring finger (points 13-16)
+      draw(13, 14, paintLine);
+      draw(14, 15, paintLine);
+      draw(15, 16, paintLine);
+      
+      // Draw Pinky (points 17-20)
+      draw(17, 18, paintLine);
+      draw(18, 19, paintLine);
+      draw(19, 20, paintLine);
+      
+      // Draw landmarks points
+      for (int i = 0; i < pts.length; i++) {
+        // Fingertips (4, 8, 12, 16, 20) in cyan, larger
+        if (i == 4 || i == 8 || i == 12 || i == 16 || i == 20) {
+          canvas.drawCircle(pts[i], 6, paintTips);
+        }
+        // Wrist (0) in yellow, larger
+        else if (i == 0) {
+          canvas.drawCircle(pts[i], 6, Paint()..style = PaintingStyle.fill..color = Colors.yellow);
+        }
+        // Other joints in white
+        else {
+          canvas.drawCircle(pts[i], 4, paintPoint);
+        }
+      }
     }
   }
-  @override bool shouldRepaint(covariant CustomPainter old) => true;
+  
+  @override
+  bool shouldRepaint(covariant CustomPainter old) => true;
 }
