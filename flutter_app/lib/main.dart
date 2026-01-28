@@ -100,9 +100,11 @@ class _HandGestureHomeState extends State<HandGestureHome> {
   List<List<double>> _flutterHands = [];
   List<String> _wordCandidateHistory = []; // Match Python's history logic
 
-  // Interpreters
+  // Interpreters and ValueNotifiers
   Interpreter? _interpreterLetters;
   Interpreter? _interpreterWords;
+  final ValueNotifier<List<List<double>>> _handsNotifier = ValueNotifier([]);
+  final ValueNotifier<String> _detectedTextNotifier = ValueNotifier("En attente...");
 
   // Translation Data
   final Map<String, Map<String, String>> _translationsLetters = {
@@ -230,37 +232,62 @@ class _HandGestureHomeState extends State<HandGestureHome> {
   void _processCameraImage(CameraImage image) async {
     if (_isDetecting || _plugin == null) return; // Guard
     
-    // Performance: Skip frames (process every 3rd frame)
+    // Performance: Skip frames (process every 4th frame for stability)
     _frameCounter++;
-    if (_frameCounter % 3 != 0) return;
+    if (_frameCounter % 4 != 0) return;
     
     _isDetecting = true;
     final swFrame = Stopwatch()..start();
     
     try {
-       // Plugin detection (Sync or Async depending on version, example says Sync?)
-       // Checking source: "The detect method is now synchronous" according to user snippet.
-       // But CameraImage streaming is async.
-       
        final swDetect = Stopwatch()..start();
        final hands = _plugin!.detect(image, _controller!.description.sensorOrientation);
        swDetect.stop();
        
        if (mounted) {
          final swConvert = Stopwatch()..start();
-         // Save rotation for UI debug
          _sensorRotation = _controller!.description.sensorOrientation;
+         bool isFrontCamera = _controller!.description.lensDirection == CameraLensDirection.front;
 
-         // Convert to existing format List<List<double>> for Painter and Classifier
-         List<List<double>> convertedHands = hands.map((h) => h.landmarks.expand((l) => [l.x, l.y]).toList()).toList();
+         // NEW: Process landmarks relative to SCREEN orientation for INFERENCE accuracy
+         List<List<double>> convertedHands = [];
+         
+         for (var hand in hands) {
+           List<double> normalizedLandmarks = [];
+           for (var landmark in hand.landmarks) {
+              double px = landmark.x;
+              double py = landmark.y;
+              
+              // Apply rotation to match Python's upright training data
+              double finalX = px;
+              double finalY = py;
+              
+              if (_sensorRotation == 90) {
+                finalX = 1.0 - py;
+                finalY = px;
+              } else if (_sensorRotation == 270) {
+                finalX = py;
+                finalY = 1.0 - px;
+              } else if (_sensorRotation == 180) {
+                finalX = 1.0 - px;
+                finalY = 1.0 - py;
+              }
+
+              if (isFrontCamera) {
+                finalX = 1.0 - finalX;
+              }
+              
+              normalizedLandmarks.add(finalX);
+              normalizedLandmarks.add(finalY);
+           }
+           convertedHands.add(normalizedLandmarks);
+         }
          swConvert.stop();
           
-         setState(() {
-           _flutterHands = convertedHands;
-           if (_flutterHands.isEmpty) detectedText = "En attente...";
-         });
+         // Optimized UI update using ValueNotifier
+         _handsNotifier.value = convertedHands;
 
-         if (_flutterHands.isNotEmpty) {
+         if (convertedHands.isNotEmpty) {
            final swInference = Stopwatch()..start();
            final features = _processHandLandmarksForClassifier(convertedHands);
            if (currentMode == "LETTRES") {
@@ -275,6 +302,7 @@ class _HandGestureHomeState extends State<HandGestureHome> {
              print("⏱️ Performance (ms): Detect: ${swDetect.elapsedMilliseconds}, Convert: ${swConvert.elapsedMilliseconds}, Inference: ${swInference.elapsedMilliseconds}, Total Process: ${swFrame.elapsedMilliseconds}");
            }
          } else {
+           _detectedTextNotifier.value = "En attente..."; // Match notifier logic
            _sequenceBuffer.clear();
          }
        }
@@ -287,31 +315,33 @@ class _HandGestureHomeState extends State<HandGestureHome> {
   }
 
   List<double> _processHandLandmarksForClassifier(List<List<double>> hands) {
-    // Optimized: Reduce processing overhead
+    if (hands.isEmpty) return List.filled(84, 0.0);
+
+    // 1. Sort hands by wrist X coordinate (Left-to-Right)
     List<List<double>> sorted = List.from(hands);
     sorted.sort((a, b) => a[0].compareTo(b[0]));
     
+    // 2. Flatten all coordinates
     List<double> rawAll = [];
     for (var h in sorted) rawAll.addAll(h);
     
-    // Normalize relative to bounding box
-    if (rawAll.isNotEmpty) {
-      double minX = rawAll[0], minY = rawAll[1];
-      for (int i = 0; i < rawAll.length; i += 2) {
-        if (rawAll[i] < minX) minX = rawAll[i];
-        if (rawAll[i + 1] < minY) minY = rawAll[i + 1];
-      }
-      for (int i = 0; i < rawAll.length; i += 2) {
-        rawAll[i] -= minX;
-        rawAll[i + 1] -= minY;
-      }
+    // 3. Normalization: Subtract absolute global MIN (Exactly like Python)
+    double minX = 1.0, minY = 1.0; 
+    for (int i = 0; i < rawAll.length; i += 2) {
+      if (rawAll[i] < minX) minX = rawAll[i];
+      if (rawAll[i + 1] < minY) minY = rawAll[i + 1];
+    }
+
+    List<double> processed = [];
+    for (int i = 0; i < rawAll.length; i += 2) {
+      processed.add(rawAll[i] - minX);
+      processed.add(rawAll[i + 1] - minY);
     }
     
-    while (rawAll.length < 84) rawAll.add(0.0);
-    return rawAll.sublist(0, 84);
+    // Pad for 2-hand model (84 features)
+    while (processed.length < 84) processed.add(0.0);
+    return processed.sublist(0, 84);
   }
-
-
 
 
 
@@ -435,7 +465,7 @@ class _HandGestureHomeState extends State<HandGestureHome> {
       // Letters: Direct writing
       setState(() {
         phrase += translated;
-        detectedText = translated;
+        _detectedTextNotifier.value = translated;
       });
       _speak();
     }
@@ -649,12 +679,47 @@ class _HandGestureHomeState extends State<HandGestureHome> {
                   CameraPreview(_controller!)
                 else 
                   Center(child: CircularProgressIndicator(color: Colors.cyan)),
-                if (_flutterHands.isNotEmpty)
-                  CustomPaint(painter: HandPainter(_flutterHands, _controller!.value.previewSize!, _controller!.description.sensorOrientation, isFrontCamera)),
-                Align(alignment: Alignment.bottomCenter, child: Container(margin: const EdgeInsets.only(bottom: 20), padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(8)), child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  Text(detectedText, style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold)),
-                  Text("Debug: Hands=${_flutterHands.length} | Rot: $_sensorRotation", style: const TextStyle(color: Colors.yellow, fontSize: 10))
-                ]))),
+                ValueListenableBuilder<List<List<double>>>(
+                  valueListenable: _handsNotifier,
+                  builder: (context, currentHands, _) {
+                    if (currentHands.isEmpty) return const SizedBox.shrink();
+                    return CustomPaint(
+                      painter: HandPainter(
+                        currentHands, 
+                        _controller!.value.previewSize!, 
+                        _sensorRotation, 
+                        isFrontCamera
+                      ),
+                    );
+                  },
+                ),
+                Align(
+                  alignment: Alignment.bottomCenter, 
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 20), 
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), 
+                    decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(8)), 
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min, 
+                      children: [
+                        ValueListenableBuilder<String>(
+                          valueListenable: _detectedTextNotifier,
+                          builder: (context, text, _) => Text(
+                            text, 
+                            style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold)
+                          ),
+                        ),
+                        ValueListenableBuilder<List<List<double>>>(
+                          valueListenable: _handsNotifier,
+                          builder: (context, h, _) => Text(
+                            "Debug: Hands=${h.length} | Rot: $_sensorRotation", 
+                            style: const TextStyle(color: Colors.yellow, fontSize: 10)
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
                 if (_pendingWord != null)
                    Center(
                      child: GestureDetector(
@@ -679,7 +744,12 @@ class _HandGestureHomeState extends State<HandGestureHome> {
                    ),
               ]))),
               const SizedBox(width: 8),
-              Expanded(flex: 4, child: Container(decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white12)), child: ClipRRect(borderRadius: BorderRadius.circular(16), child: (detectedText != "En attente..." && detectedText.isNotEmpty) ? Image.asset('assets/gestures/${detectedText.toUpperCase()}_0.jpg', fit: BoxFit.contain, errorBuilder: (c, e, s) => Center(child: Text(detectedText, style: const TextStyle(color: Colors.white54)))) : const Center(child: Icon(Icons.back_hand, size: 40, color: Colors.white24)))))
+              Expanded(flex: 4, child: Container(decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white12)), child: ClipRRect(borderRadius: BorderRadius.circular(16), child: ValueListenableBuilder<String>(
+                valueListenable: _detectedTextNotifier,
+                builder: (context, text, _) => (text != "En attente..." && text.isNotEmpty) 
+                  ? Image.asset('assets/gestures/${text.toUpperCase()}_0.jpg', fit: BoxFit.contain, errorBuilder: (c, e, s) => Center(child: Text(text, style: const TextStyle(color: Colors.white54)))) 
+                  : const Center(child: Icon(Icons.back_hand, size: 40, color: Colors.white24)),
+              )))),
             ]))),
             Container(padding: const EdgeInsets.all(12), child: Row(children: [
               Expanded(flex: 2, child: ElevatedButton.icon(icon: Icon(isListening ? Icons.stop : Icons.mic, size: 18), label: Text(isListening ? "STOP" : "MICRO (${_languageCodes[_selectedLanguage]?.toUpperCase()})"), style: ElevatedButton.styleFrom(backgroundColor: isListening ? Colors.redAccent : const Color(0xFF9C27B0), padding: const EdgeInsets.symmetric(vertical: 12)), onPressed: _listen)),
@@ -756,31 +826,8 @@ class HandPainter extends CustomPainter {
       // 2. Camera sensor is often landscape, screen is portrait
       
       for (int i = 0; i < hand.length; i += 2) {
-        double px = hand[i];
-        double py = hand[i + 1];
-        
-        // Handle Sensor Rotation (90 degrees is standard for portrait)
-        // This fixes the "inclined 45/90 degree" problem
-        double finalX = px;
-        double finalY = py;
-        
-        if (rotation == 90) {
-          finalX = 1.0 - py;
-          finalY = px;
-        } else if (rotation == 270) {
-          finalX = py;
-          finalY = 1.0 - px;
-        } else if (rotation == 180) {
-          finalX = 1.0 - px;
-          finalY = 1.0 - py;
-        }
-
-        // Mirror for front camera
-        if (isFrontCamera) {
-          finalX = 1.0 - finalX;
-        }
-
-        pts.add(Offset(finalX * size.width, finalY * size.height));
+        // Points are now correctly rotated in _processCameraImage
+        pts.add(Offset(hand[i] * size.width, hand[i+1] * size.height));
       }
       
       // Safe drawing function
