@@ -331,7 +331,7 @@ class _HandGestureHomeState extends State<HandGestureHome> {
       }
     }
 
-    if (maxProb > 0.75) { // Increased precision threshold
+    if (maxProb > 0.80) { // Matched with inference_classifier.py standard
       String label = _labelsLetters[maxIdx];
       
       // Stabilization logic (Voting)
