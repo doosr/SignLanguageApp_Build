@@ -90,8 +90,9 @@ class _HandGestureHomeState extends State<HandGestureHome> {
   List<String> _labelsWords = [];
   List<List<double>> _flutterHands = []; // Store detected hands (21 points)
 
-  List<List<double>> _sequenceBuffer = [];
-  final int _sequenceLength = 15;
+  // Stabilization
+  final List<String> _letterBuffer = [];
+  final int _bufferSize = 5; // A letter must appear 5 times to be confirmed
 
   // Interpreters
   Interpreter? _interpreterLetters;
@@ -171,8 +172,8 @@ class _HandGestureHomeState extends State<HandGestureHome> {
   Future<void> _initPlugin() async {
     try {
       _plugin = HandLandmarkerPlugin.create(
-        numHands: 1, // Reducing to 1 hand for much better performance
-        minHandDetectionConfidence: 0.6,
+        numHands: 2, // Support for 2 hands as requested
+        minHandDetectionConfidence: 0.7, // Higher precision
         delegate: HandLandmarkerDelegate.gpu,
       );
       print("✅ HandLandmarkerPlugin initialized");
@@ -228,28 +229,41 @@ class _HandGestureHomeState extends State<HandGestureHome> {
     if (_frameCounter % 3 != 0) return;
     
     _isDetecting = true;
+    final swFrame = Stopwatch()..start();
+    
     try {
        // Plugin detection (Sync or Async depending on version, example says Sync?)
        // Checking source: "The detect method is now synchronous" according to user snippet.
        // But CameraImage streaming is async.
        
+       final swDetect = Stopwatch()..start();
        final hands = _plugin!.detect(image, _controller!.description.sensorOrientation);
+       swDetect.stop();
        
        if (mounted) {
+         final swConvert = Stopwatch()..start();
          // Convert to existing format List<List<double>> for Painter and Classifier
          List<List<double>> convertedHands = hands.map((h) => h.landmarks.expand((l) => [l.x, l.y]).toList()).toList();
-         
+         swConvert.stop();
+          
          setState(() {
            _flutterHands = convertedHands;
            if (_flutterHands.isEmpty) detectedText = "En attente...";
          });
 
          if (_flutterHands.isNotEmpty) {
+           final swInference = Stopwatch()..start();
            final features = _processHandLandmarksForClassifier(convertedHands);
            if (currentMode == "LETTRES") {
               _runInferenceLetters(features);
            } else {
               _runInferenceWords(features);
+           }
+           swInference.stop();
+          
+           // Log performance every 30 frames (to avoid spamming but see lag)
+           if (_frameCounter % 30 == 0) {
+             print("⏱️ Performance (ms): Detect: ${swDetect.elapsedMilliseconds}, Convert: ${swConvert.elapsedMilliseconds}, Inference: ${swInference.elapsedMilliseconds}, Total Process: ${swFrame.elapsedMilliseconds}");
            }
          } else {
            _sequenceBuffer.clear();
@@ -258,7 +272,8 @@ class _HandGestureHomeState extends State<HandGestureHome> {
     } catch (e) {
       print("Vision error: $e");
     } finally { 
-      _isDetecting = false; 
+      _isDetecting = false;
+      swFrame.stop();
     }
   }
 
@@ -316,12 +331,20 @@ class _HandGestureHomeState extends State<HandGestureHome> {
       }
     }
 
-    if (maxProb > 0.60) {
+    if (maxProb > 0.75) { // Increased precision threshold
       String label = _labelsLetters[maxIdx];
-      if (detectedText != label) {
-        print("🎯 Detected: $label (${(maxProb * 100).toStringAsFixed(1)}%)");
+      
+      // Stabilization logic (Voting)
+      _letterBuffer.add(label);
+      if (_letterBuffer.length > _bufferSize) _letterBuffer.removeAt(0);
+
+      // Check if the majority in buffer is this label
+      int count = _letterBuffer.where((e) => e == label).length;
+      if (count >= 3 && detectedText != label) {
         _onGestureDetected(label);
       }
+    } else {
+      _letterBuffer.clear();
     }
   }
 
@@ -355,8 +378,16 @@ class _HandGestureHomeState extends State<HandGestureHome> {
     }
   }
 
+  DateTime _lastGestureTime = DateTime.now();
+
   Future<void> _onGestureDetected(String gestureKey) async {
     if (gestureKey.isEmpty) return;
+    
+    // Cooldown: Avoid processing too fast which causes lag and repetition
+    final now = DateTime.now();
+    if (now.difference(_lastGestureTime).inMilliseconds < 1500) return;
+    _lastGestureTime = now;
+
     String translated = gestureKey;
     String targetLang = _selectedLanguage;
 
@@ -659,16 +690,36 @@ class HandPainter extends CustomPainter {
     for (final hand in hands) {
       List<Offset> pts = [];
       
-      // Convert normalized coordinates to screen coordinates
-      for (int i = 0; i < hand.length; i += 2) {
-        pts.add(Offset(hand[i] * size.width, hand[i + 1] * size.height));
-      }
+      // Mirroring and Rotation Logic
+      // 1. MediaPipe coordinates are normalized (0-1)
+      // 2. Camera sensor is often landscape, screen is portrait
       
-      // Mirror for front camera (Important for alignment)
-      if (isFrontCamera) {
-        // More robust mirroring based on rotation if needed, 
-        // but simple X flip is standard for front camera preview.
-        pts = pts.map((p) => Offset(size.width - p.dx, p.dy)).toList();
+      for (int i = 0; i < hand.length; i += 2) {
+        double px = hand[i];
+        double py = hand[i + 1];
+        
+        // Handle Sensor Rotation (90 degrees is standard for portrait)
+        // This fixes the "inclined 45/90 degree" problem
+        double finalX = px;
+        double finalY = py;
+        
+        if (rotation == 90) {
+          finalX = 1.0 - py;
+          finalY = px;
+        } else if (rotation == 270) {
+          finalX = py;
+          finalY = 1.0 - px;
+        } else if (rotation == 180) {
+          finalX = 1.0 - px;
+          finalY = 1.0 - py;
+        }
+
+        // Mirror for front camera
+        if (isFrontCamera) {
+          finalX = 1.0 - finalX;
+        }
+
+        pts.add(Offset(finalX * size.width, finalY * size.height));
       }
       
       // Safe drawing function
