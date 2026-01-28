@@ -4,7 +4,7 @@ publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: '>=3.0.0 <4.0.0'
+  sdk: '>=3.2.0 <4.0.0'
 
 dependencies:
   flutter:
@@ -13,6 +13,7 @@ dependencies:
 
   # Caméra et Vision
   camera: ^0.10.5+9
+  hand_landmarker: ^2.2.0
   tflite_flutter: ^0.10.1 # Pour exécuter nos modèles convertis
 
   # Utils
@@ -29,6 +30,7 @@ dependencies:
   http: ^1.2.0
   web_socket_channel: ^2.4.0
   permission_handler: ^11.3.1
+  image: ^4.7.2
 
 dev_dependencies:
   flutter_test:

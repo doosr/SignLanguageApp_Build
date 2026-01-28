@@ -4,12 +4,11 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'dart:async';
 import 'package:tflite_flutter/tflite_flutter.dart';
-import 'package:google_ml_kit/google_ml_kit.dart';
-import 'package:flutter/foundation.dart';
+import 'package:hand_landmarker/hand_landmarker.dart';
 import 'dart:io';
 import 'package:flutter/services.dart';
-import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:translator/translator.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 List<CameraDescription> cameras = [];
 
@@ -51,21 +50,16 @@ class HandGestureHome extends StatefulWidget {
 }
 
 class _HandGestureHomeState extends State<HandGestureHome> {
-  // Native Bridge
-  static const platform = MethodChannel('com.example.flutter_app/mediapipe');
-  bool _useNativeBridge = true;
-  List<List<double>> _nativeHands = [];
-
   // Controllers
   CameraController? _controller;
   FlutterTts flutterTts = FlutterTts();
   stt.SpeechToText _speech = stt.SpeechToText();
   final GoogleTranslator _translator = GoogleTranslator();
   
-  // Vision (Fallback)
-  final PoseDetector _poseDetector = GoogleMlKit.vision.poseDetector(poseDetectorOptions: PoseDetectorOptions(model: PoseDetectionModel.accurate));
-  bool _isBusy = false;
-  List<Pose> _poses = [];
+  // Vision
+  HandLandmarkerPlugin? _plugin;
+  bool _isDetecting = false;
+  List<Hand> _landmarks = [];
   
   // State
   String detectedText = "En attente...";
@@ -88,10 +82,12 @@ class _HandGestureHomeState extends State<HandGestureHome> {
   };
   
   // TFLite
-  Interpreter? _interpreterLetters;
-  Interpreter? _interpreterWords;
+
+
   List<String> _labelsLetters = [];
   List<String> _labelsWords = [];
+  List<List<double>> _flutterHands = []; // Store detected hands (21 points)
+
   List<List<double>> _sequenceBuffer = [];
   final int _sequenceLength = 15;
 
@@ -137,9 +133,32 @@ class _HandGestureHomeState extends State<HandGestureHome> {
   @override
   void initState() {
     super.initState();
-    _requestPermissions();
-    _loadModels();
-    _initCamera();
+    _initializeSafe();
+  }
+
+  Future<void> _initializeSafe() async {
+    await _requestPermissions();
+    
+    // Create plugin instance
+    try {
+      _plugin = HandLandmarkerPlugin.create(
+        numHands: 2,
+        minHandDetectionConfidence: 0.5,
+        delegate: HandLandmarkerDelegate.gpu,
+      );
+    } catch (e) {
+      print("Plugin init error: $e");
+    }
+
+    await _loadModels();
+    if (cameras.isEmpty) {
+      try {
+        cameras = await availableCameras();
+      } catch (e) {
+        print("Camera info error: $e");
+      }
+    }
+    if (mounted) _initCamera();
   }
 
   Future<void> _requestPermissions() async {
@@ -150,6 +169,8 @@ class _HandGestureHomeState extends State<HandGestureHome> {
     try {
       _interpreterLetters = await Interpreter.fromAsset('model_letters.tflite');
       _interpreterWords = await Interpreter.fromAsset('model_words.tflite');
+
+
       
       String labelsLettersRaw = await rootBundle.loadString('assets/model_letters_labels.txt');
       _labelsLetters = labelsLettersRaw.split('\n').where((s) => s.isNotEmpty).toList();
@@ -175,147 +196,69 @@ class _HandGestureHomeState extends State<HandGestureHome> {
   }
 
   void _processCameraImage(CameraImage image) async {
-    if (_isBusy) return;
-    _isBusy = true;
+    if (_isDetecting || _plugin == null) return; // Guard
+    _isDetecting = true;
     try {
-      if (_useNativeBridge && Platform.isAndroid) {
-          // Native Bridge Mode (Hand Landmarker 21 points)
-          final List<Uint8List> planes = image.planes.map((plane) => plane.bytes).toList();
-          final WriteBuffer allBytes = WriteBuffer();
-          allBytes.putUint8List(planes[0]); // Y
-          if (planes.length > 2) {
-             // Basic NV21 construct for native side decoding
-             allBytes.putUint8List(planes[2]); 
-             allBytes.putUint8List(planes[1]);
-          }
-          var bytes = allBytes.done().buffer.asUint8List();
-          
-          try {
-            final List<dynamic>? result = await platform.invokeMethod('detectHands', {
-              "image": bytes,
-              "width": image.width,
-              "height": image.height
-            });
-            
-            if (mounted) {
-              if (result != null && result.isNotEmpty) {
-                 List<List<double>> hands = result.map((h) => (h as List<dynamic>).map((e) => (e as num).toDouble()).toList()).toList();
-                 List<double> combinedFeatures = _processNativeLandmarks(hands);
-                 
-                 setState(() {
-                   _nativeHands = hands;
-                   _poses = []; // Clear poses to hide pose overlay
-                 });
+       // Plugin detection (Sync or Async depending on version, example says Sync?)
+       // Checking source: "The detect method is now synchronous" according to user snippet.
+       // But CameraImage streaming is async.
+       
+       final hands = _plugin!.detect(image, _controller!.description.sensorOrientation);
+       
+       if (mounted) {
+         // Convert to existing format List<List<double>> for Painter and Classifier
+         List<List<double>> convertedHands = hands.map((h) => h.landmarks.expand((l) => [l.x, l.y]).toList()).toList();
+         
+         setState(() {
+           _flutterHands = convertedHands;
+           if (_flutterHands.isEmpty) detectedText = "En attente...";
+         });
 
-                 // Run Inference
-                 if (currentMode == "LETTRES") {
-                    _runInferenceLetters(combinedFeatures);
-                 } else {
-                    _runInferenceWords(combinedFeatures);
-                 }
-              } else {
-                 setState(() {
-                   _nativeHands = [];
-                   detectedText = "En attente..."; 
-                 });
-                 _sequenceBuffer.clear();
-              }
-            }
-          } catch (e) {
-            print("Native Bridge Error: $e");
-            _useNativeBridge = false; // Fallback
-          }
-      } else {
-        // Fallback to ML Kit Pose
-        final inputImage = _inputImageFromCameraImage(image);
-        if (inputImage != null) {
-          final poses = await _poseDetector.processImage(inputImage);
-          if (mounted) {
-            setState(() { 
-              _poses = poses; 
-              _nativeHands = []; // Clear native hands
-              if (poses.isEmpty) detectedText = "En attente...";
-            });
-            if (poses.isNotEmpty) {
-               final features = _extractFeatures(poses);
-               if (features != null) {
-                 if (currentMode == "LETTRES") {
-                    _runInferenceLetters(features);
-                 } else {
-                    _runInferenceWords(features);
-                 }
-               }
-            }
-          }
-        }
-      }
-    } finally { _isBusy = false; }
-  }
-
-  List<double> _processNativeLandmarks(List<List<double>> nativeHands) {
-     // Expected 2 hands. Total 84 features (2 hands * 21 points * 2 coords).
-     List<List<double>> sortedHands = List.from(nativeHands);
-     sortedHands.sort((a, b) => a[0].compareTo(b[0])); // Sort by X
-     
-     List<double> rawAll = [];
-     for (var hand in sortedHands) {
-        if (rawAll.length >= 84) break; 
-        rawAll.addAll(hand);
-     }
-     
-     // Normalize relative to min_x, min_y
-     if (rawAll.isNotEmpty) {
-       double minX = rawAll[0];
-       double minY = rawAll[1];
-       for(int i=0; i<rawAll.length; i+=2) {
-          if (rawAll[i] < minX) minX = rawAll[i];
-          if (rawAll[i+1] < minY) minY = rawAll[i+1];
+         if (_flutterHands.isNotEmpty) {
+           final features = _processHandLandmarksForClassifier(convertedHands);
+           if (currentMode == "LETTRES") {
+              _runInferenceLetters(features);
+           } else {
+              _runInferenceWords(features);
+           }
+         } else {
+           _sequenceBuffer.clear();
+         }
        }
-       for(int i=0; i<rawAll.length; i+=2) {
-          rawAll[i] -= minX;
-          rawAll[i+1] -= minY;
-       }
-     }
-     
-     while (rawAll.length < 84) {
-       rawAll.add(0.0);
-     }
-     
-     return rawAll.sublist(0, 84);
+    } catch (e) {
+      print("Vision error: $e");
+    } finally { 
+      _isDetecting = false; 
+    }
   }
 
-  List<double>? _extractFeatures(List<Pose> poses) {
-    if (poses.isEmpty) return null;
-    final pose = poses.first;
-    
-    final wristL = pose.landmarks[PoseLandmarkType.leftWrist]!;
-    final wristR = pose.landmarks[PoseLandmarkType.rightWrist]!;
-    final indexL = pose.landmarks[PoseLandmarkType.leftIndex]!;
-    final indexR = pose.landmarks[PoseLandmarkType.rightIndex]!;
-    final pinkyL = pose.landmarks[PoseLandmarkType.leftPinky]!;
-    final pinkyR = pose.landmarks[PoseLandmarkType.rightPinky]!;
-    final thumbL = pose.landmarks[PoseLandmarkType.leftThumb]!;
-    final thumbR = pose.landmarks[PoseLandmarkType.rightThumb]!;
-    
-    List<double> dataL = [wristL.x, wristL.y, thumbL.x, thumbL.y, indexL.x, indexL.y, pinkyL.x, pinkyL.y]; 
-    dataL.addAll(List.filled(34, 0.0));
-    
-    List<double> dataR = [wristR.x, wristR.y, thumbR.x, thumbR.y, indexR.x, indexR.y, pinkyR.x, pinkyR.y];
-    dataR.addAll(List.filled(34, 0.0));
-    
-    List<double> combined = [...dataL, ...dataR];
-    double minX = combined[0];
-    double minY = combined[1];
-    for (int i=0; i<combined.length; i+=2) {
-      if (combined[i] < minX && combined[i] != 0) minX = combined[i];
-      if (combined[i+1] < minY && combined[i+1] != 0) minY = combined[i+1];
-    }
-    for (int i=0; i<combined.length; i+=2) {
-      if (combined[i] != 0) combined[i] -= minX;
-      if (combined[i+1] != 0) combined[i+1] -= minY;
-    }
-    return combined;
+  List<double> _processHandLandmarksForClassifier(List<List<double>> hands) {
+       // Logic similar to previous _processNativeLandmarks
+       List<List<double>> sorted = List.from(hands);
+       sorted.sort((a,b) => a[0].compareTo(b[0]));
+       
+       List<double> rawAll = [];
+       for(var h in sorted) rawAll.addAll(h);
+       
+       // Normalize relative to bounding box of the hand signs
+       if (rawAll.isNotEmpty) {
+         double minX = rawAll[0], minY = rawAll[1];
+          for(int i=0; i<rawAll.length; i+=2) {
+            if (rawAll[i] < minX) minX = rawAll[i];
+            if (rawAll[i+1] < minY) minY = rawAll[i+1];
+          }
+          for(int i=0; i<rawAll.length; i+=2) {
+            rawAll[i] -= minX;
+            rawAll[i+1] -= minY;
+          }
+       }
+       while(rawAll.length < 84) rawAll.add(0.0);
+       return rawAll.sublist(0,84);
   }
+
+
+
+
 
   void _runInferenceLetters(List<double> features) {
     if (_interpreterLetters == null) return;
@@ -408,8 +351,9 @@ class _HandGestureHomeState extends State<HandGestureHome> {
 
   @override
   void dispose() {
+    _controller?.stopImageStream();
     _controller?.dispose();
-    _poseDetector.close();
+    _plugin?.dispose();
     super.dispose();
   }
 
@@ -533,13 +477,11 @@ class _HandGestureHomeState extends State<HandGestureHome> {
             Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Row(children: [
               Expanded(flex: 6, child: ClipRRect(borderRadius: BorderRadius.circular(16), child: Stack(fit: StackFit.expand, children: [
                 CameraPreview(_controller!), 
-                if (_useNativeBridge && _nativeHands.isNotEmpty)
-                  CustomPaint(painter: HandPainter(_nativeHands, _controller!.value.previewSize!, _controller!.description.sensorOrientation, isFrontCamera))
-                else if (_poses.isNotEmpty)
-                  CustomPaint(painter: PosePainter(_poses, _controller!.value.previewSize!, _controller!.description.sensorOrientation, isFrontCamera)),
+                if (_flutterHands.isNotEmpty)
+                  CustomPaint(painter: HandPainter(_flutterHands, _controller!.value.previewSize!, _controller!.description.sensorOrientation, isFrontCamera)),
                 Align(alignment: Alignment.bottomCenter, child: Container(margin: const EdgeInsets.only(bottom: 20), padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(8)), child: Column(mainAxisSize: MainAxisSize.min, children: [
                   Text(detectedText, style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold)),
-                  Text("Debug: Hands=${_nativeHands.length} | Poses=${_poses.length}", style: const TextStyle(color: Colors.yellow, fontSize: 10))
+                  Text("Debug: Hands=${_flutterHands.length}", style: const TextStyle(color: Colors.yellow, fontSize: 10))
                 ]))),
               ]))),
               const SizedBox(width: 8),
@@ -557,33 +499,7 @@ class _HandGestureHomeState extends State<HandGestureHome> {
   }
 }
 
-class PosePainter extends CustomPainter {
-  final List<Pose> poses;
-  final Size absoluteImageSize;
-  final int rotation;
-  final bool isFrontCamera;
-  PosePainter(this.poses, this.absoluteImageSize, this.rotation, this.isFrontCamera);
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paintLine = Paint()..style = PaintingStyle.stroke..strokeWidth = 4.0..color = Colors.greenAccent;
-    final paintWrist = Paint()..style = PaintingStyle.fill..color = Colors.redAccent;
-    for (final pose in poses) {
-      final landmarks = pose.landmarks;
-      final lw = landmarks[PoseLandmarkType.leftWrist]; final rw = landmarks[PoseLandmarkType.rightWrist];
-      void draw(PoseLandmark? s, PoseLandmark? e) { if (s!=null && e!=null) canvas.drawLine(_scale(s.x, s.y, size), _scale(e.x, e.y, size), paintLine); }
-      draw(lw, landmarks[PoseLandmarkType.leftIndex]); draw(rw, landmarks[PoseLandmarkType.rightIndex]);
-      if (lw!=null) canvas.drawCircle(_scale(lw.x, lw.y, size), 8, paintWrist);
-      if (rw!=null) canvas.drawCircle(_scale(rw.x, rw.y, size), 8, paintWrist);
-    }
-  }
-  Offset _scale(double x, double y, Size size) {
-    double scaleX = size.width / (rotation == 90 || rotation == 270 ? absoluteImageSize.height : absoluteImageSize.width);
-    double scaleY = size.height / (rotation == 90 || rotation == 270 ? absoluteImageSize.width : absoluteImageSize.height);
-    double sx = x * scaleX; if (isFrontCamera) sx = size.width - sx;
-    return Offset(sx, y * scaleY);
-  }
-  @override bool shouldRepaint(covariant CustomPainter old) => true;
-}
+
 
 class HandPainter extends CustomPainter {
   final List<List<double>> hands;
