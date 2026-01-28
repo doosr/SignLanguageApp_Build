@@ -91,6 +91,10 @@ class _HandGestureHomeState extends State<HandGestureHome> {
   List<List<double>> _sequenceBuffer = [];
   final int _sequenceLength = 15;
 
+  // Interpreters
+  Interpreter? _interpreterLetters;
+  Interpreter? _interpreterWords;
+
   // Translation Data
   final Map<String, Map<String, String>> _translationsLetters = {
     "A": {"Français": "A", "Anglais": "A", "Arabe": "أ"},
@@ -339,15 +343,7 @@ class _HandGestureHomeState extends State<HandGestureHome> {
     _speak();
   }
 
-  InputImage? _inputImageFromCameraImage(CameraImage image) {
-    try {
-      final sensorOrientation = _controller!.description.sensorOrientation;
-      final rotation = InputImageRotationValue.fromRawValue(sensorOrientation) ?? InputImageRotation.rotation0deg;
-      final format = Platform.isAndroid ? InputImageFormat.nv21 : (InputImageFormatValue.fromRawValue(image.format.raw) ?? InputImageFormat.nv21);
-      final plane = image.planes[0];
-      return InputImage.fromBytes(bytes: plane.bytes, metadata: InputImageMetadata(size: Size(image.width.toDouble(), image.height.toDouble()), rotation: rotation, format: format, bytesPerRow: plane.bytesPerRow));
-    } catch (e) { return null; }
-  }
+
 
   @override
   void dispose() {
