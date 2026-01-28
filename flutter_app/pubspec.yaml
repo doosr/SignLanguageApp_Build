@@ -9,11 +9,15 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  
 
-  camera: ^0.10.5+9
+  # Camera (version compatible avec hand_landmarker)
+  camera: ^0.11.3
+
+  # MediaPipe Hand Landmarker
   hand_landmarker: ^2.2.0
-  tflite_flutter: ^0.10.1 # Pour exécuter nos modèles convertis
+
+  # TensorFlow Lite
+  tflite_flutter: ^0.10.1
 
   # Utils
   path_provider: ^2.1.2
@@ -36,11 +40,9 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^3.0.0
 
-
 flutter:
   uses-material-design: true
-  
-  # Activer les assets
+
   assets:
     - assets/
     - assets/gestures/
@@ -49,5 +51,3 @@ flutter:
     - assets/model_letters_labels.txt
     - assets/model_words_labels.txt
     - assets/hand_landmarker.task
-
-
