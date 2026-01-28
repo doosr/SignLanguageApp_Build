@@ -23,7 +23,7 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
-          flutter-version: '3.19.0' # Version stable récente
+
 
       - name: Get Dependencies
         working-directory: ./flutter_app
