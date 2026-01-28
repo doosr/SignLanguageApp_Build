@@ -9,6 +9,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:translator/translator.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:url_launcher/url_launcher.dart';
 
 List<CameraDescription> cameras = [];
 
@@ -171,20 +172,25 @@ class _HandGestureHomeState extends State<HandGestureHome> {
 
   Future<void> _loadModels() async {
     try {
+      print("📦 Loading model_letters.tflite..."); // DEBUG
       _interpreterLetters = await Interpreter.fromAsset('model_letters.tflite');
-      _interpreterWords = await Interpreter.fromAsset('model_words.tflite');
-
-
+      print("✅ model_letters loaded"); // DEBUG
       
+      print("📦 Loading model_words.tflite..."); // DEBUG
+      _interpreterWords = await Interpreter.fromAsset('model_words.tflite');
+      print("✅ model_words loaded"); // DEBUG
+
       String labelsLettersRaw = await rootBundle.loadString('assets/model_letters_labels.txt');
       _labelsLetters = labelsLettersRaw.split('\n').where((s) => s.isNotEmpty).toList();
+      print("✅ Loaded ${_labelsLetters.length} letter labels"); // DEBUG
       
       String labelsWordsRaw = await rootBundle.loadString('assets/model_words_labels.txt');
       _labelsWords = labelsWordsRaw.split('\n').where((s) => s.isNotEmpty).toList();
+      print("✅ Loaded ${_labelsWords.length} word labels"); // DEBUG
       
-      print("✅ Models and Labels loaded.");
+      print("✅ Models and Labels loaded successfully!"); // DEBUG
     } catch (e) {
-      print("❌ Error loading models: $e");
+      print("❌ Error loading models: $e"); // DEBUG
     }
   }
 
@@ -265,10 +271,23 @@ class _HandGestureHomeState extends State<HandGestureHome> {
 
 
   void _runInferenceLetters(List<double> features) {
-    if (_interpreterLetters == null) return;
+    if (_interpreterLetters == null) {
+      print("❌ Letter interpreter is null!"); // DEBUG
+      return;
+    }
+    
+    print("🔢 Running inference with ${features.length} features"); // DEBUG
+    
     var input = [features];
     var output = List.filled(1, List.filled(_labelsLetters.length, 0.0));
-    _interpreterLetters!.run(input, output);
+    
+    try {
+      _interpreterLetters!.run(input, output);
+      print("✅ Inference completed"); // DEBUG
+    } catch (e) {
+      print("❌ Inference error: $e"); // DEBUG
+      return;
+    }
 
     int maxIdx = 0;
     double maxProb = -1.0;
@@ -279,11 +298,15 @@ class _HandGestureHomeState extends State<HandGestureHome> {
       }
     }
 
+    print("🎯 Best prediction: ${_labelsLetters[maxIdx]} (${(maxProb * 100).toStringAsFixed(2)}%)"); // DEBUG
+
     if (maxProb > 0.60) {
       String label = _labelsLetters[maxIdx];
       if (detectedText != label) {
          _onGestureDetected(label);
       }
+    } else {
+      print("⚠️ Confidence too low: ${(maxProb * 100).toStringAsFixed(2)}%"); // DEBUG
     }
   }
 
@@ -398,6 +421,71 @@ class _HandGestureHomeState extends State<HandGestureHome> {
       }
   });
   void _addSpace() => setState(() { phrase += " "; });
+  
+  // ESP32-CAM Stream
+  void _openESP32Stream() async {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: Color(0xFF1F2633),
+          title: Text('ESP32-CAM Stream', style: TextStyle(color: Colors.white)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('IP: $currentEspIp', style: TextStyle(color: Colors.cyan, fontSize: 16)),
+              SizedBox(height: 16),
+              Text('Ouvrir le stream dans:', style: TextStyle(color: Colors.white70)),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                _launchESP32Browser();
+              },
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.open_in_browser, color: Colors.cyan),
+                  SizedBox(width: 8),
+                  Text('Navigateur', style: TextStyle(color: Colors.cyan)),
+                ],
+              ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('Annuler', style: TextStyle(color: Colors.white70)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+  
+  Future<void> _launchESP32Browser() async {
+    final Uri url = Uri.parse('http://$currentEspIp/stream');
+    try {
+      if (await canLaunchUrl(url)) {
+        await launchUrl(url, mode: LaunchMode.externalApplication);
+      } else {
+        _showError('Impossible d\'ouvrir l\'URL: $url');
+      }
+    } catch (e) {
+      _showError('Erreur: $e');
+    }
+  }
+  
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
+      ),
+    );
+  }
+  
   void _listen() async {
     if (!isListening) {
       if (await _speech.initialize()) {
@@ -486,7 +574,31 @@ class _HandGestureHomeState extends State<HandGestureHome> {
             Container(padding: const EdgeInsets.all(12), child: Row(children: [
               Expanded(flex: 2, child: ElevatedButton.icon(icon: Icon(isListening ? Icons.stop : Icons.mic, size: 18), label: Text(isListening ? "STOP" : "MICRO (${_languageCodes[_selectedLanguage]?.toUpperCase()})"), style: ElevatedButton.styleFrom(backgroundColor: isListening ? Colors.redAccent : const Color(0xFF9C27B0), padding: const EdgeInsets.symmetric(vertical: 12)), onPressed: _listen)),
               const SizedBox(width: 10),
-              Expanded(flex: 3, child: TextField(style: const TextStyle(fontSize: 12, color: Colors.white), decoration: const InputDecoration(hintText: "ESP32 IP", hintStyle: TextStyle(color: Colors.white54), filled: true, fillColor: Colors.black26, isDense: true, border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(8)))), onChanged: (v) => currentEspIp = v))
+              Expanded(flex: 3, child: GestureDetector(
+                onTap: _openESP32Stream,
+                child: Container(
+                  padding: EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade900,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.cyan, width: 2)
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.videocam, color: Colors.cyan, size: 18),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          "ESP32: $currentEspIp",
+                          style: TextStyle(color: Colors.white, fontSize: 12),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ))
             ])),
           ],
         ),
