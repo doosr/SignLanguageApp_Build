@@ -97,7 +97,8 @@ class _HandGestureHomeState extends State<HandGestureHome> {
 
   List<String> _labelsLetters = [];
   List<String> _labelsWords = [];
-  List<List<double>> _flutterHands = []; // Store detected hands (21 points)
+  List<List<double>> _flutterHands = [];
+  List<String> _wordCandidateHistory = []; // Match Python's history logic
 
   // Interpreters
   Interpreter? _interpreterLetters;
@@ -339,7 +340,7 @@ class _HandGestureHomeState extends State<HandGestureHome> {
       }
     }
 
-    if (maxProb > 0.80) { // Matched with inference_classifier.py standard
+    if (maxProb > 0.40) { // Match Python threshold (0.4)
       String label = _labelsLetters[maxIdx];
       
       // Stabilization logic (Voting)
@@ -376,10 +377,18 @@ class _HandGestureHomeState extends State<HandGestureHome> {
         }
       }
 
-      if (maxProb > 0.80) {
+      if (maxProb > 0.15) {
         String label = _labelsWords[maxIdx];
-        if (detectedText != label) {
+        
+        // Match Python's frequency logic (Counter equivalent)
+        _wordCandidateHistory.add(label);
+        if (_wordCandidateHistory.length > 10) _wordCandidateHistory.removeAt(0);
+        
+        int freq = _wordCandidateHistory.where((e) => e == label).length;
+        
+        if (freq >= 5 && detectedText != label) {
            _onGestureDetected(label);
+           _wordCandidateHistory.clear();
            _sequenceBuffer.clear();
         }
       }
@@ -787,27 +796,12 @@ class HandPainter extends CustomPainter {
       final paintRing = Paint()..color = Colors.pinkAccent..strokeWidth = 3.0..style = PaintingStyle.stroke;
       final paintPinky = Paint()..color = Colors.purpleAccent..strokeWidth = 3.0..style = PaintingStyle.stroke;
 
-      // Draw Palm Base (yellow)
-      if (pts.length >= 21) {
-        draw(0, 1, paintPalm);
-        draw(0, 5, paintPalm);
-        draw(0, 17, paintPalm);
-        draw(5, 9, paintPalm);
-        draw(9, 13, paintPalm);
-        draw(13, 17, paintPalm);
-      }
-      
-      // Draw Fingers with distinct colors
-      // Thumb
-      draw(1, 2, paintThumb); draw(2, 3, paintThumb); draw(3, 4, paintThumb);
-      // Index
-      draw(5, 6, paintIndex); draw(6, 7, paintIndex); draw(7, 8, paintIndex);
-      // Middle
-      draw(9, 10, paintMiddle); draw(10, 11, paintMiddle); draw(11, 12, paintMiddle);
-      // Ring
-      draw(13, 14, paintRing); draw(14, 15, paintRing); draw(15, 16, paintRing);
-      // Pinky
-      draw(17, 18, paintPinky); draw(18, 19, paintPinky); draw(19, 20, paintPinky);
+      // Show only points as per user request (like inference_classifier.py)
+      /* 
+      // Lines removed to match inference_classifier.py
+      draw(0, 1, paintPalm);
+      ...
+      */
       
       // Draw landmarks points
       for (int i = 0; i < pts.length; i++) {

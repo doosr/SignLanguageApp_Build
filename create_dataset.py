@@ -189,29 +189,24 @@ class HandLandmarkExtractor:
         
         print(f"Parsing directories in {self.data_dir}...")
         
-        for dir_ in sorted(os.listdir(self.data_dir)):
-            dir_path = os.path.join(self.data_dir, dir_)
-            if not os.path.isdir(dir_path): continue
+        for root, dirs, files in os.walk(self.data_dir):
+            if not files: continue # Skip directories without files
             
-            # Check for subdirectories (hierarchical categories)
-            items = os.listdir(dir_path)
-            subdirs = [d for d in items if os.path.isdir(os.path.join(dir_path, d))]
+            # Use the leaf directory name as the label
+            label = os.path.basename(root)
             
-            targets = []
-            if subdirs:
-                for sub in subdirs: targets.append((sub, os.path.join(dir_path, sub)))
+            # Check if this folder contains images
+            image_files = [f for f in files if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+            if not image_files: continue
+            
+            # HEURISTIQUE: Si le label a 1 seule lettre -> Static (A-Z)
+            # Sinon -> Sequence (Mots)
+            if len(label) == 1:
+                print(f"Processing STATIC category: {label} (Path: {root})")
+                self.process_static_folder(root, label, data_static, labels_static)
             else:
-                targets.append((dir_, dir_path))
-            
-            for label, path in targets:
-                # HEURISTIQUE: Si le label a 1 seule lettre -> Static (A-Z)
-                # Sinon -> Sequence (Mots)
-                if len(label) == 1:
-                    print(f"Processing STATIC category: {label}")
-                    self.process_static_folder(path, label, data_static, labels_static)
-                else:
-                    print(f"Processing SEQUENCE category: {label}")
-                    self.process_sequence_folder(path, label, data_sequence, labels_sequence)
+                print(f"Processing SEQUENCE category: {label} (Path: {root})")
+                self.process_sequence_folder(root, label, data_sequence, labels_sequence)
         
         # Save Static Data (Letters)
         if data_static:

@@ -29,6 +29,10 @@ jobs:
         working-directory: ./flutter_app
         run: flutter pub get
 
+      - name: Generate Icons
+        working-directory: ./flutter_app
+        run: dart run flutter_launcher_icons
+
       - name: Build APK
         working-directory: ./flutter_app
         run: flutter build apk --release --no-tree-shake-icons
