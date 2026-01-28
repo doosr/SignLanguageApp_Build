@@ -71,6 +71,13 @@ class _HandGestureHomeState extends State<HandGestureHome> {
   String currentEspIp = "192.168.1.100";
   String? _pendingWord;
   String? _pendingEmoji;
+  int _sensorRotation = 0; 
+  
+  // Buffers
+  final List<String> _letterBuffer = [];
+  final int _bufferSize = 5; 
+  List<List<double>> _sequenceBuffer = [];
+  final int _sequenceLength = 15;
   
   // Language
   String _selectedLanguage = "Français";
@@ -91,10 +98,6 @@ class _HandGestureHomeState extends State<HandGestureHome> {
   List<String> _labelsLetters = [];
   List<String> _labelsWords = [];
   List<List<double>> _flutterHands = []; // Store detected hands (21 points)
-
-  // Stabilization
-  final List<String> _letterBuffer = [];
-  final int _bufferSize = 5; // A letter must appear 5 times to be confirmed
 
   // Interpreters
   Interpreter? _interpreterLetters;
@@ -244,6 +247,9 @@ class _HandGestureHomeState extends State<HandGestureHome> {
        
        if (mounted) {
          final swConvert = Stopwatch()..start();
+         // Save rotation for UI debug
+         _sensorRotation = _controller!.description.sensorOrientation;
+
          // Convert to existing format List<List<double>> for Painter and Classifier
          List<List<double>> convertedHands = hands.map((h) => h.landmarks.expand((l) => [l.x, l.y]).toList()).toList();
          swConvert.stop();
@@ -637,7 +643,7 @@ class _HandGestureHomeState extends State<HandGestureHome> {
                   CustomPaint(painter: HandPainter(_flutterHands, _controller!.value.previewSize!, _controller!.description.sensorOrientation, isFrontCamera)),
                 Align(alignment: Alignment.bottomCenter, child: Container(margin: const EdgeInsets.only(bottom: 20), padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(8)), child: Column(mainAxisSize: MainAxisSize.min, children: [
                   Text(detectedText, style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold)),
-                  Text("Debug: Hands=${_flutterHands.length} | Rot: $rotation", style: const TextStyle(color: Colors.yellow, fontSize: 10))
+                  Text("Debug: Hands=${_flutterHands.length} | Rot: $_sensorRotation", style: const TextStyle(color: Colors.yellow, fontSize: 10))
                 ]))),
                 if (_pendingWord != null)
                    Center(
