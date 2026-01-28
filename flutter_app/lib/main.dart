@@ -145,18 +145,16 @@ class _HandGestureHomeState extends State<HandGestureHome> {
   Future<void> _initializeSafe() async {
     await _requestPermissions();
     
-    // Create plugin instance
+    // Performance: Load models and plugin in parallel for faster startup
     try {
-      _plugin = HandLandmarkerPlugin.create(
-        numHands: 2,
-        minHandDetectionConfidence: 0.5,
-        delegate: HandLandmarkerDelegate.gpu,
-      );
+      await Future.wait([
+        _loadModels(),
+        _initPlugin(),
+      ]);
     } catch (e) {
-      print("Plugin init error: $e");
+      print("Initialization parallel error: $e");
     }
 
-    await _loadModels();
     if (cameras.isEmpty) {
       try {
         cameras = await availableCameras();
@@ -164,7 +162,23 @@ class _HandGestureHomeState extends State<HandGestureHome> {
         print("Camera info error: $e");
       }
     }
+    
+    // Slight delay to ensure system is ready
+    await Future.delayed(const Duration(milliseconds: 500));
     if (mounted) _initCamera();
+  }
+
+  Future<void> _initPlugin() async {
+    try {
+      _plugin = HandLandmarkerPlugin.create(
+        numHands: 1, // Reducing to 1 hand for much better performance
+        minHandDetectionConfidence: 0.6,
+        delegate: HandLandmarkerDelegate.gpu,
+      );
+      print("✅ HandLandmarkerPlugin initialized");
+    } catch (e) {
+      print("Plugin init error: $e");
+    }
   }
 
   Future<void> _requestPermissions() async {
@@ -208,6 +222,11 @@ class _HandGestureHomeState extends State<HandGestureHome> {
 
   void _processCameraImage(CameraImage image) async {
     if (_isDetecting || _plugin == null) return; // Guard
+    
+    // Performance: Skip frames (process every 3rd frame)
+    _frameCounter++;
+    if (_frameCounter % 3 != 0) return;
+    
     _isDetecting = true;
     try {
        // Plugin detection (Sync or Async depending on version, example says Sync?)
@@ -556,7 +575,10 @@ class _HandGestureHomeState extends State<HandGestureHome> {
             ])),
             Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Row(children: [
               Expanded(flex: 6, child: ClipRRect(borderRadius: BorderRadius.circular(16), child: Stack(fit: StackFit.expand, children: [
-                CameraPreview(_controller!), 
+                if (_controller != null && _controller!.value.isInitialized) 
+                  CameraPreview(_controller!)
+                else 
+                  Center(child: CircularProgressIndicator(color: Colors.cyan)),
                 if (_flutterHands.isNotEmpty)
                   CustomPaint(painter: HandPainter(_flutterHands, _controller!.value.previewSize!, _controller!.description.sensorOrientation, isFrontCamera)),
                 Align(alignment: Alignment.bottomCenter, child: Container(margin: const EdgeInsets.only(bottom: 20), padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(8)), child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -642,8 +664,10 @@ class HandPainter extends CustomPainter {
         pts.add(Offset(hand[i] * size.width, hand[i + 1] * size.height));
       }
       
-      // Mirror for front camera
+      // Mirror for front camera (Important for alignment)
       if (isFrontCamera) {
+        // More robust mirroring based on rotation if needed, 
+        // but simple X flip is standard for front camera preview.
         pts = pts.map((p) => Offset(size.width - p.dx, p.dy)).toList();
       }
       
@@ -654,62 +678,45 @@ class HandPainter extends CustomPainter {
         }
       }
       
-      // MediaPipe Hand Landmarks: 21 points
-      // 0: Wrist
-      // 1-4: Thumb
-      // 5-8: Index finger
-      // 9-12: Middle finger
-      // 13-16: Ring finger
-      // 17-20: Pinky
-      
-      // Draw Palm (base connections in yellow)
+      // Paint for each finger to make it colorful
+      final paintThumb = Paint()..color = Colors.orangeAccent..strokeWidth = 3.0..style = PaintingStyle.stroke;
+      final paintIndex = Paint()..color = Colors.greenAccent..strokeWidth = 3.0..style = PaintingStyle.stroke;
+      final paintMiddle = Paint()..color = Colors.blueAccent..strokeWidth = 3.0..style = PaintingStyle.stroke;
+      final paintRing = Paint()..color = Colors.pinkAccent..strokeWidth = 3.0..style = PaintingStyle.stroke;
+      final paintPinky = Paint()..color = Colors.purpleAccent..strokeWidth = 3.0..style = PaintingStyle.stroke;
+
+      // Draw Palm Base (yellow)
       if (pts.length >= 21) {
-        draw(0, 1, paintPalm);   // Wrist to thumb base
-        draw(0, 5, paintPalm);   // Wrist to index base
-        draw(0, 17, paintPalm);  // Wrist to pinky base
-        draw(5, 9, paintPalm);   // Index to middle base
-        draw(9, 13, paintPalm);  // Middle to ring base
-        draw(13, 17, paintPalm); // Ring to pinky base
+        draw(0, 1, paintPalm);
+        draw(0, 5, paintPalm);
+        draw(0, 17, paintPalm);
+        draw(5, 9, paintPalm);
+        draw(9, 13, paintPalm);
+        draw(13, 17, paintPalm);
       }
       
-      // Draw Thumb (points 1-4)
-      draw(1, 2, paintLine);
-      draw(2, 3, paintLine);
-      draw(3, 4, paintLine);
-      
-      // Draw Index finger (points 5-8)
-      draw(5, 6, paintLine);
-      draw(6, 7, paintLine);
-      draw(7, 8, paintLine);
-      
-      // Draw Middle finger (points 9-12)
-      draw(9, 10, paintLine);
-      draw(10, 11, paintLine);
-      draw(11, 12, paintLine);
-      
-      // Draw Ring finger (points 13-16)
-      draw(13, 14, paintLine);
-      draw(14, 15, paintLine);
-      draw(15, 16, paintLine);
-      
-      // Draw Pinky (points 17-20)
-      draw(17, 18, paintLine);
-      draw(18, 19, paintLine);
-      draw(19, 20, paintLine);
+      // Draw Fingers with distinct colors
+      // Thumb
+      draw(1, 2, paintThumb); draw(2, 3, paintThumb); draw(3, 4, paintThumb);
+      // Index
+      draw(5, 6, paintIndex); draw(6, 7, paintIndex); draw(7, 8, paintIndex);
+      // Middle
+      draw(9, 10, paintMiddle); draw(10, 11, paintMiddle); draw(11, 12, paintMiddle);
+      // Ring
+      draw(13, 14, paintRing); draw(14, 15, paintRing); draw(15, 16, paintRing);
+      // Pinky
+      draw(17, 18, paintPinky); draw(18, 19, paintPinky); draw(19, 20, paintPinky);
       
       // Draw landmarks points
       for (int i = 0; i < pts.length; i++) {
-        // Fingertips (4, 8, 12, 16, 20) in cyan, larger
+        // High visibility points
         if (i == 4 || i == 8 || i == 12 || i == 16 || i == 20) {
-          canvas.drawCircle(pts[i], 6, paintTips);
-        }
-        // Wrist (0) in yellow, larger
-        else if (i == 0) {
-          canvas.drawCircle(pts[i], 6, Paint()..style = PaintingStyle.fill..color = Colors.yellow);
-        }
-        // Other joints in white
-        else {
-          canvas.drawCircle(pts[i], 4, paintPoint);
+          canvas.drawCircle(pts[i], 8, paintTips); // Even larger tips
+          canvas.drawCircle(pts[i], 3, Paint()..color = Colors.black); // Inner dot
+        } else if (i == 0) {
+          canvas.drawCircle(pts[i], 10, Paint()..color = Colors.yellow); // Very large wrist
+        } else {
+          canvas.drawCircle(pts[i], 5, paintPoint);
         }
       }
     }
