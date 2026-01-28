@@ -69,6 +69,8 @@ class _HandGestureHomeState extends State<HandGestureHome> {
   String currentMode = "LETTRES"; 
   bool isListening = false;
   String currentEspIp = "192.168.1.100";
+  String? _pendingWord;
+  String? _pendingEmoji;
   
   // Language
   String _selectedLanguage = "Français";
@@ -129,12 +131,12 @@ class _HandGestureHomeState extends State<HandGestureHome> {
   };
 
   final Map<String, Map<String, String>> _translationsWords = {
-    "BONJOUR": {"Français": "Bonjour", "Anglais": "Hello", "Arabe": "مرحبا"},
-    "MERCI": {"Français": "Merci", "Anglais": "Thank you", "Arabe": "شكرا"},
-    "SVP": {"Français": "S'il vous plaît", "Anglais": "Please", "Arabe": "من فضلك"},
-    "OUI": {"Français": "Oui", "Anglais": "Yes", "Arabe": "نعم"},
-    "NON": {"Français": "Non", "Anglais": "No", "Arabe": "لا"},
-    "AU REVOIR": {"Français": "Au revoir", "Anglais": "Goodbye", "Arabe": "مع السلامة"},
+    "BONJOUR": {"Français": "Bonjour", "Anglais": "Hello", "Arabe": "مرحبا", "emoji": "👋"},
+    "MERCI": {"Français": "Merci", "Anglais": "Thank you", "Arabe": "شكرا", "emoji": "🙏"},
+    "SVP": {"Français": "S'il vous plaît", "Anglais": "Please", "Arabe": "من فضلك", "emoji": "🤲"},
+    "OUI": {"Français": "Oui", "Anglais": "Yes", "Arabe": "نعم", "emoji": "👍"},
+    "NON": {"Français": "Non", "Anglais": "No", "Arabe": "لا", "emoji": "👎"},
+    "AU REVOIR": {"Français": "Au revoir", "Anglais": "Goodbye", "Arabe": "مع السلامة", "emoji": "🖐️"},
   };
 
   @override
@@ -405,9 +407,30 @@ class _HandGestureHomeState extends State<HandGestureHome> {
     }
 
     if (!mounted) return;
+
+    if (currentMode == "MOTS") {
+      // Python style: Show suggestion button for validation
+      setState(() {
+        _pendingWord = translated;
+        _pendingEmoji = _translationsWords[gestureKey.toUpperCase()]?['emoji'];
+        detectedText = translated;
+      });
+    } else {
+      // Letters: Direct writing
+      setState(() {
+        phrase += translated;
+        detectedText = translated;
+      });
+      _speak();
+    }
+  }
+
+  void _confirmWord() {
+    if (_pendingWord == null) return;
     setState(() {
-      phrase += (currentMode == "MOTS" && phrase.isNotEmpty ? " " : "") + translated;
-      detectedText = translated;
+      phrase += (phrase.isNotEmpty ? " " : "") + _pendingWord!;
+      _pendingWord = null;
+      _pendingEmoji = null;
     });
     _speak();
   }
@@ -614,8 +637,30 @@ class _HandGestureHomeState extends State<HandGestureHome> {
                   CustomPaint(painter: HandPainter(_flutterHands, _controller!.value.previewSize!, _controller!.description.sensorOrientation, isFrontCamera)),
                 Align(alignment: Alignment.bottomCenter, child: Container(margin: const EdgeInsets.only(bottom: 20), padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(8)), child: Column(mainAxisSize: MainAxisSize.min, children: [
                   Text(detectedText, style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold)),
-                  Text("Debug: Hands=${_flutterHands.length}", style: const TextStyle(color: Colors.yellow, fontSize: 10))
+                  Text("Debug: Hands=${_flutterHands.length} | Rot: $rotation", style: const TextStyle(color: Colors.yellow, fontSize: 10))
                 ]))),
+                if (_pendingWord != null)
+                   Center(
+                     child: GestureDetector(
+                       onTap: _confirmWord,
+                       child: Container(
+                         padding: EdgeInsets.all(20),
+                         decoration: BoxDecoration(
+                           color: Colors.cyan.withOpacity(0.8),
+                           shape: BoxShape.circle,
+                           border: Border.all(color: Colors.white, width: 4),
+                           boxShadow: [BoxShadow(color: Colors.black54, blurRadius: 10)]
+                         ),
+                         child: Column(
+                           mainAxisSize: MainAxisSize.min,
+                           children: [
+                             Text(_pendingEmoji ?? "✅", style: TextStyle(fontSize: 60)),
+                             Text(_pendingWord!, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
+                           ],
+                         ),
+                       ),
+                     ),
+                   ),
               ]))),
               const SizedBox(width: 8),
               Expanded(flex: 4, child: Container(decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white12)), child: ClipRRect(borderRadius: BorderRadius.circular(16), child: (detectedText != "En attente..." && detectedText.isNotEmpty) ? Image.asset('assets/gestures/${detectedText.toUpperCase()}_0.jpg', fit: BoxFit.contain, errorBuilder: (c, e, s) => Center(child: Text(detectedText, style: const TextStyle(color: Colors.white54)))) : const Center(child: Icon(Icons.back_hand, size: 40, color: Colors.white24)))))
