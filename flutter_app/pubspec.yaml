@@ -67,6 +67,6 @@ msix_config:
   publisher_display_name: Doosr
   identity_name: com.doosr.signlanguageapp
   msix_version: 1.0.0.0
-  logo_path: assets/gestures/logo.png
+  logo_path: assets/app_icon.png
   capabilities: webcam, microphone
   languages: en-us, fr-fr, ar-sa
