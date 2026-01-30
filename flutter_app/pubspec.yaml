@@ -59,3 +59,13 @@ flutter:
     - assets/model_letters_labels.txt
     - assets/model_words_labels.txt
     - assets/hand_landmarker.task
+
+# Configuration MSIX pour installateur Windows professionnel
+msix_config:
+  display_name: SignLanguage App
+  publisher_display_name: Doosr
+  identity_name: com.doosr.signlanguageapp
+  msix_version: 1.0.0.0
+  logo_path: assets/gestures/logo.png
+  capabilities: webcam, microphone
+  languages: en-us, fr-fr, ar-sa
