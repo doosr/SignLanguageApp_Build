@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
 import 'dart:math' as math;
 import '../theme/app_theme.dart';
@@ -25,7 +26,7 @@ class _InverseModeScreenState extends State<InverseModeScreen> with SingleTicker
   
   final Map<String, String> _languageCodes = {
     'Français': 'fr-FR',
-    'English': 'en-US',
+    'Anglais': 'en-US',
     'Arabe': 'ar-SA',
   };
   
@@ -39,6 +40,14 @@ class _InverseModeScreenState extends State<InverseModeScreen> with SingleTicker
       duration: const Duration(milliseconds: 1500),
     )..repeat();
     _initSpeech();
+    _loadLanguage();
+  }
+
+  Future<void> _loadLanguage() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _selectedLanguage = prefs.getString('language') ?? 'Français';
+    });
   }
 
   Future<void> _initSpeech() async {
