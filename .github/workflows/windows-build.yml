@@ -1,0 +1,55 @@
+name: Build Windows EXE
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.27.2'
+        channel: 'stable'
+        
+    - name: Enable Windows Desktop
+      run: flutter config --enable-windows-desktop
+      working-directory: flutter_app
+      
+    - name: Install dependencies
+      run: flutter pub get
+      working-directory: flutter_app
+      
+    - name: Build Windows Release
+      run: flutter build windows --release
+      working-directory: flutter_app
+      
+    - name: Create ZIP archive
+      run: |
+        cd flutter_app/build/windows/x64/runner/Release
+        Compress-Archive -Path * -DestinationPath SignLanguageApp-Windows.zip
+      shell: pwsh
+      
+    - name: Upload Windows EXE
+      uses: actions/upload-artifact@v4
+      with:
+        name: SignLanguageApp-Windows
+        path: flutter_app/build/windows/x64/runner/Release/SignLanguageApp-Windows.zip
+        if-no-files-found: error
+        
+    - name: Create Release (on tag)
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: flutter_app/build/windows/x64/runner/Release/SignLanguageApp-Windows.zip
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
