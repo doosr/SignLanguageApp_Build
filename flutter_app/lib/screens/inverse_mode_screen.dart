@@ -5,7 +5,6 @@ import 'dart:async';
 import 'dart:math' as math;
 import '../theme/app_theme.dart';
 import '../widgets/glassmorphism_card.dart';
-import '../widgets/gradient_button.dart';
 
 class InverseModeScreen extends StatefulWidget {
   const InverseModeScreen({Key? key}) : super(key: key);
@@ -14,12 +13,12 @@ class InverseModeScreen extends StatefulWidget {
   State<InverseModeScreen> createState() => _InverseModeScreenState();
 }
 
-class _InverseModeScreenState extends State<InverseModeScreen> with SingleTickerProviderStateMixin {
+class _InverseModeScreenState extends State<InverseModeScreen> with TickerProviderStateMixin {
   final stt.SpeechToText _speech = stt.SpeechToText();
   bool _isListening = false;
   String _recognizedText = '';
   String _selectedLanguage = 'Français';
-  double _speed = 1.0; // 0.5 = lent, 1.0 = normal, 2.0 = rapide
+  double _speed = 1.0;
   
   int _currentLetterIndex = 0;
   Timer? _animationTimer;
@@ -31,14 +30,24 @@ class _InverseModeScreenState extends State<InverseModeScreen> with SingleTicker
   };
   
   late AnimationController _waveController;
+  late AnimationController _pulseController;
+  late AnimationController _glowController;
 
   @override
   void initState() {
     super.initState();
     _waveController = AnimationController(
       vsync: this,
+      duration: const Duration(milliseconds: 2000),
+    );
+    _pulseController = AnimationController(
+      vsync: this,
       duration: const Duration(milliseconds: 1500),
-    )..repeat();
+    )..repeat(reverse: true);
+    _glowController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2000),
+    )..repeat(reverse: true);
     _initSpeech();
     _loadLanguage();
   }
@@ -83,7 +92,6 @@ class _InverseModeScreenState extends State<InverseModeScreen> with SingleTicker
     
     if (_recognizedText.isEmpty) return;
     
-    // Speed: lent=2s, normal=1s, rapide=0.5s per letter
     final duration = Duration(milliseconds: (1000 / _speed).round());
     
     _animationTimer = Timer.periodic(duration, (timer) {
@@ -98,6 +106,8 @@ class _InverseModeScreenState extends State<InverseModeScreen> with SingleTicker
   @override
   void dispose() {
     _waveController.dispose();
+    _pulseController.dispose();
+    _glowController.dispose();
     _animationTimer?.cancel();
     _speech.stop();
     super.dispose();
@@ -109,8 +119,16 @@ class _InverseModeScreenState extends State<InverseModeScreen> with SingleTicker
     
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: AppTheme.backgroundGradient,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color(0xFF1a1a3e),
+              Color(0xFF0f0f2e),
+              Color(0xFF2d1b4e),
+            ],
+          ),
         ),
         child: SafeArea(
           child: Column(
@@ -121,95 +139,193 @@ class _InverseModeScreenState extends State<InverseModeScreen> with SingleTicker
                 child: Row(
                   children: [
                     IconButton(
-                      icon: const Icon(Icons.arrow_back, color: AppTheme.textPrimary),
+                      icon: const Icon(Icons.arrow_back, color: Colors.white),
                       onPressed: () => Navigator.pop(context),
                     ),
                     const SizedBox(width: 16),
                     Text(
                       'Mode Inverse',
-                      style: AppTheme.headingMedium.copyWith(fontSize: 24),
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
                     ),
                   ],
                 ),
               ),
               
-              const SizedBox(height: 20),
+              const Spacer(),
               
-              // Microphone Button with Wave Animation
-              GestureDetector(
-                onTap: _toggleListening,
-                child: Container(
-                  width: 120,
-                  height: 120,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: _isListening
-                      ? AppTheme.primaryGradient
-                      : LinearGradient(
-                          colors: [Colors.grey.shade800, Colors.grey.shade700],
+              // Sound Wave Visualization with Microphone
+              Stack(
+                alignment: Alignment.center,
+                children: [
+                  // Animated Sound Waves
+                  if (_isListening)
+                    AnimatedBuilder(
+                      animation: _waveController,
+                      builder: (context, child) {
+                        return CustomPaint(
+                          size: Size(MediaQuery.of(context).size.width, 200),
+                          painter: SoundWavePainter(
+                            _waveController.value,
+                            isListening: _isListening,
+                          ),
+                        );
+                      },
+                    ),
+                  
+                  // Circular Glow Effect
+                  AnimatedBuilder(
+                    animation: _glowController,
+                    builder: (context, child) {
+                      return Container(
+                        width: 180 + (_glowController.value * 20),
+                        height: 180 + (_glowController.value * 20),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: _isListening 
+                                ? Color(0xFF6366f1).withOpacity(0.3 + _glowController.value * 0.2)
+                                : Colors.transparent,
+                              blurRadius: 40 + (_glowController.value * 20),
+                              spreadRadius: 10,
+                            ),
+                          ],
                         ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: _isListening 
-                          ? AppTheme.primaryPurple.withOpacity(0.5)
-                          : Colors.black.withOpacity(0.3),
-                        blurRadius: 30,
-                        offset: const Offset(0, 10),
-                      ),
-                    ],
+                      );
+                    },
                   ),
-                  child: Icon(
-                    _isListening ? Icons.stop : Icons.mic,
-                    color: Colors.white,
-                    size: 50,
+                  
+                  // Microphone Button
+                  GestureDetector(
+                    onTap: _toggleListening,
+                    child: AnimatedBuilder(
+                      animation: _pulseController,
+                      builder: (context, child) {
+                        return Container(
+                          width: 140,
+                          height: 140,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: _isListening
+                              ? LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: [
+                                    Color(0xFF8b5cf6),
+                                    Color(0xFF6366f1),
+                                  ],
+                                )
+                              : LinearGradient(
+                                  colors: [
+                                    Color(0xFF4a4a6a),
+                                    Color(0xFF3a3a5a),
+                                  ],
+                                ),
+                            border: Border.all(
+                              color: _isListening 
+                                ? Colors.white.withOpacity(0.3)
+                                : Colors.white.withOpacity(0.1),
+                              width: 2,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: _isListening 
+                                  ? Color(0xFF6366f1).withOpacity(0.5)
+                                  : Colors.black.withOpacity(0.3),
+                                blurRadius: 30,
+                                offset: const Offset(0, 10),
+                              ),
+                            ],
+                          ),
+                          child: Icon(
+                            _isListening ? Icons.mic : Icons.mic_none,
+                            color: Colors.white,
+                            size: 60,
+                          ),
+                        );
+                      },
+                    ),
                   ),
-                ),
+                  
+                  // Concentric Circles
+                  if (_isListening)
+                    ...List.generate(3, (index) {
+                      return AnimatedBuilder(
+                        animation: _pulseController,
+                        builder: (context, child) {
+                          final size = 160.0 + (index * 30) + (_pulseController.value * 20);
+                          final opacity = 0.3 - (index * 0.1) - (_pulseController.value * 0.2);
+                          return Container(
+                            width: size,
+                            height: size,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: Color(0xFF6366f1).withOpacity(opacity.clamp(0.0, 1.0)),
+                                width: 2,
+                              ),
+                            ),
+                          );
+                        },
+                      );
+                    }),
+                ],
               ),
               
-              if (_isListening) ...[
-                const SizedBox(height: 20),
-                // Animated Wave Visualization
-                AnimatedBuilder(
-                  animation: _waveController,
-                  builder: (context, child) {
-                    return CustomPaint(
-                      size: const Size(200, 40),
-                      painter: WavePainter(_waveController.value),
-                    );
-                  },
-                ),
-              ],
-              
-              const SizedBox(height: 30),
+              const SizedBox(height: 40),
               
               // Phrase Display
               if (_recognizedText.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: GlassmorphismCard(
-                    padding: const EdgeInsets.all(20),
+                  child: Container(
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          Color(0xFF6366f1).withOpacity(0.2),
+                          Color(0xFF8b5cf6).withOpacity(0.2),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: Color(0xFF6366f1).withOpacity(0.3),
+                        width: 1,
+                      ),
+                    ),
                     child: Column(
                       children: [
                         Text(
                           'Phrase ($_selectedLanguage):',
-                          style: AppTheme.bodyMedium,
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 14,
+                          ),
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 12),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Expanded(
                               child: Text(
                                 _recognizedText,
-                                style: AppTheme.headingSmall.copyWith(fontSize: 20),
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 28,
+                                  fontWeight: FontWeight.bold,
+                                ),
                                 textAlign: TextAlign.center,
                               ),
                             ),
                             IconButton(
-                              icon: const Icon(Icons.volume_up, color: AppTheme.accentCyan),
-                              onPressed: () {
-                                // TTS would go here
-                              },
+                              icon: const Icon(Icons.volume_up, color: Color(0xFF06b6d4)),
+                              onPressed: () {},
                             ),
                           ],
                         ),
@@ -218,20 +334,12 @@ class _InverseModeScreenState extends State<InverseModeScreen> with SingleTicker
                   ),
                 ),
               
-              const SizedBox(height: 20),
+              const SizedBox(height: 30),
               
               // Gesture Sequence Display
-              if (letters.isNotEmpty) ...[
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Text(
-                    'Séquence de gestes:',
-                    style: AppTheme.bodyMedium,
-                  ),
-                ),
-                const SizedBox(height: 12),
+              if (letters.isNotEmpty)
                 SizedBox(
-                  height: 120,
+                  height: 140,
                   child: ListView.builder(
                     scrollDirection: Axis.horizontal,
                     padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -243,27 +351,41 @@ class _InverseModeScreenState extends State<InverseModeScreen> with SingleTicker
                       return AnimatedContainer(
                         duration: const Duration(milliseconds: 300),
                         margin: const EdgeInsets.only(right: 12),
-                        width: 90,
+                        width: 100,
                         decoration: BoxDecoration(
-                          color: isActive 
-                            ? AppTheme.primaryPurple.withOpacity(0.3)
-                            : Colors.white.withOpacity(0.05),
-                          borderRadius: BorderRadius.circular(12),
+                          gradient: isActive 
+                            ? LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  Color(0xFF8b5cf6).withOpacity(0.4),
+                                  Color(0xFF6366f1).withOpacity(0.4),
+                                ],
+                              )
+                            : null,
+                          color: isActive ? null : Color(0xFF2a2a4a).withOpacity(0.5),
+                          borderRadius: BorderRadius.circular(16),
                           border: Border.all(
                             color: isActive 
-                              ? AppTheme.primaryPurple
+                              ? Color(0xFF8b5cf6)
                               : Colors.white.withOpacity(0.1),
-                            width: isActive ? 3 : 1,
+                            width: isActive ? 2 : 1,
                           ),
+                          boxShadow: isActive ? [
+                            BoxShadow(
+                              color: Color(0xFF8b5cf6).withOpacity(0.5),
+                              blurRadius: 20,
+                              spreadRadius: 2,
+                            ),
+                          ] : null,
                         ),
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            // Gesture Image
                             Expanded(
                               child: ClipRRect(
                                 borderRadius: const BorderRadius.vertical(
-                                  top: Radius.circular(12),
+                                  top: Radius.circular(16),
                                 ),
                                 child: Image.asset(
                                   'assets/gestures/${letter}_0.jpg',
@@ -272,21 +394,20 @@ class _InverseModeScreenState extends State<InverseModeScreen> with SingleTicker
                                     return Center(
                                       child: Text(
                                         '🤟',
-                                        style: TextStyle(fontSize: 40),
+                                        style: TextStyle(fontSize: 50),
                                       ),
                                     );
                                   },
                                 ),
                               ),
                             ),
-                            // Letter Label
                             Container(
-                              padding: const EdgeInsets.symmetric(vertical: 6),
+                              padding: const EdgeInsets.symmetric(vertical: 8),
                               child: Text(
                                 letter,
                                 style: TextStyle(
-                                  color: isActive ? AppTheme.accentCyan : AppTheme.textPrimary,
-                                  fontSize: 18,
+                                  color: isActive ? Color(0xFF06b6d4) : Colors.white,
+                                  fontSize: 20,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
@@ -297,30 +418,52 @@ class _InverseModeScreenState extends State<InverseModeScreen> with SingleTicker
                     },
                   ),
                 ),
-              ],
               
               const Spacer(),
               
-              // Speed Control
+              // Speed Control Slider
               Padding(
                 padding: const EdgeInsets.all(24),
-                child: GlassmorphismCard(
+                child: Container(
                   padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Color(0xFF2a2a4a).withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.1),
+                      width: 1,
+                    ),
+                  ),
                   child: Column(
                     children: [
-                      Text(
-                        'Vitesse d\'affichage',
-                        style: AppTheme.bodyMedium.copyWith(
-                          color: AppTheme.textPrimary,
+                      SliderTheme(
+                        data: SliderTheme.of(context).copyWith(
+                          activeTrackColor: Color(0xFF6366f1),
+                          inactiveTrackColor: Color(0xFF4a4a6a),
+                          thumbColor: Color(0xFF8b5cf6),
+                          overlayColor: Color(0xFF8b5cf6).withOpacity(0.3),
+                          thumbShape: RoundSliderThumbShape(enabledThumbRadius: 12),
+                          trackHeight: 4,
+                        ),
+                        child: Slider(
+                          value: _speed,
+                          min: 0.5,
+                          max: 2.0,
+                          divisions: 2,
+                          onChanged: (value) {
+                            setState(() => _speed = value);
+                            if (!_isListening && _recognizedText.isNotEmpty) {
+                              _startGestureAnimation();
+                            }
+                          },
                         ),
                       ),
-                      const SizedBox(height: 16),
                       Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          _buildSpeedButton('Lent', 0.5),
-                          _buildSpeedButton('Normal', 1.0),
-                          _buildSpeedButton('Rapide', 2.0),
+                          Text('Lent', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                          Text('Normal', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                          Text('Rapide', style: TextStyle(color: Colors.white70, fontSize: 12)),
                         ],
                       ),
                     ],
@@ -333,70 +476,65 @@ class _InverseModeScreenState extends State<InverseModeScreen> with SingleTicker
       ),
     );
   }
-
-  Widget _buildSpeedButton(String label, double speed) {
-    final isSelected = _speed == speed;
-    return GestureDetector(
-      onTap: () {
-        setState(() => _speed = speed);
-        if (!_isListening && _recognizedText.isNotEmpty) {
-          _startGestureAnimation();
-        }
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-        decoration: BoxDecoration(
-          color: isSelected 
-            ? AppTheme.primaryPurple.withOpacity(0.3)
-            : Colors.white.withOpacity(0.05),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isSelected 
-              ? AppTheme.primaryPurple
-              : Colors.white.withOpacity(0.1),
-            width: 2,
-          ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isSelected ? AppTheme.accentCyan : AppTheme.textMuted,
-            fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-          ),
-        ),
-      ),
-    );
-  }
 }
 
-// Wave Painter for Audio Visualization
-class WavePainter extends CustomPainter {
+// Advanced Sound Wave Painter
+class SoundWavePainter extends CustomPainter {
   final double animationValue;
+  final bool isListening;
 
-  WavePainter(this.animationValue);
+  SoundWavePainter(this.animationValue, {this.isListening = false});
 
   @override
   void paint(Canvas canvas, Size size) {
+    if (!isListening) return;
+
     final paint = Paint()
-      ..color = AppTheme.accentCyan
-      ..strokeWidth = 3
+      ..strokeWidth = 2
       ..style = PaintingStyle.stroke;
 
-    final path = Path();
-    final waveHeight = 20.0;
-    final waveLength = size.width / 4;
+    final centerY = size.height / 2;
+    final centerX = size.width / 2;
 
-    path.moveTo(0, size.height / 2);
-
-    for (double i = 0; i < size.width; i++) {
-      final y = size.height / 2 + 
-          waveHeight * math.sin((i / waveLength + animationValue * 4) * 2 * math.pi);
-      path.lineTo(i, y);
+    // Draw multiple wave layers
+    for (int layer = 0; layer < 3; layer++) {
+      final path = Path();
+      final amplitude = 30.0 + (layer * 15);
+      final frequency = 0.02 - (layer * 0.005);
+      final phase = animationValue * 2 * math.pi + (layer * math.pi / 3);
+      
+      // Gradient colors for waves
+      final colors = [
+        Color(0xFF06b6d4),
+        Color(0xFF6366f1),
+        Color(0xFF8b5cf6),
+      ];
+      
+      paint.color = colors[layer].withOpacity(0.6 - layer * 0.15);
+      
+      // Left wave
+      path.moveTo(centerX - 150, centerY);
+      for (double x = centerX - 150; x < centerX; x += 2) {
+        final distance = (centerX - x) / 150;
+        final y = centerY + 
+          amplitude * distance * math.sin((x - centerX) * frequency + phase);
+        path.lineTo(x, y);
+      }
+      canvas.drawPath(path, paint);
+      
+      // Right wave
+      final pathRight = Path();
+      pathRight.moveTo(centerX, centerY);
+      for (double x = centerX; x < centerX + 150; x += 2) {
+        final distance = (x - centerX) / 150;
+        final y = centerY + 
+          amplitude * distance * math.sin((x - centerX) * frequency + phase);
+        pathRight.lineTo(x, y);
+      }
+      canvas.drawPath(pathRight, paint);
     }
-
-    canvas.drawPath(path, paint);
   }
 
   @override
-  bool shouldRepaint(WavePainter oldDelegate) => true;
+  bool shouldRepaint(SoundWavePainter oldDelegate) => true;
 }
