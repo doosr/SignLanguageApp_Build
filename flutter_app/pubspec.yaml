@@ -10,8 +10,8 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # Camera (version compatible avec hand_landmarker)
-  camera: ^0.11.3
+  # Camera (version compatible avec Dart 3.6.1)
+  camera: ^0.10.6
 
   # MediaPipe Hand Landmarker
   hand_landmarker: ^2.2.0
