@@ -70,3 +70,4 @@ msix_config:
   logo_path: assets/app_icon.png
   capabilities: webcam, microphone
   languages: en-us, fr-fr, ar-sa
+  install_certificate: false  # Disable for CI/CD builds
