@@ -7,6 +7,7 @@ import 'package:tflite_flutter/tflite_flutter.dart';
 import 'package:hand_landmarker/hand_landmarker.dart';
 import 'package:flutter/services.dart';
 import 'package:translator/translator.dart';
+import 'dart:io' show Platform;
 import 'screens/splash_screen.dart';
 import 'screens/welcome_screen.dart';
 import 'screens/recognition_screen.dart';
@@ -19,6 +20,13 @@ List<CameraDescription> cameras = [];
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Configure window for desktop platforms
+  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+    // Ensure window is visible and properly sized
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  }
+  
   try {
     cameras = await availableCameras();
   } on CameraException catch (e) {
