@@ -8,7 +8,7 @@ import 'package:hand_landmarker/hand_landmarker.dart';
 import 'package:flutter/services.dart';
 import 'package:translator/translator.dart';
 import 'screens/splash_screen.dart';
-import 'screens/home_screen.dart';
+import 'screens/welcome_screen.dart';
 import 'screens/recognition_screen.dart';
 import 'screens/inverse_mode_screen.dart';
 import 'screens/language_selection_screen.dart';
