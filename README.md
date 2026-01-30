@@ -124,6 +124,234 @@ L'application dispose désormais de **5 écrans modernes** avec un design glassm
 - **Police**: Outfit (Google Fonts)
 - **Poids**: 800 (Bold), 600 (SemiBold), 400 (Regular)
 
+---
+
+## 📐 Architecture & Diagrammes
+
+### Architecture Globale
+
+L'application suit une architecture multi-couches moderne avec séparation des responsabilités :
+
+```mermaid
+graph TB
+    subgraph "Présentation Layer"
+        UI[UI Screens<br/>5 écrans Flutter]
+        Widgets[Shared Widgets<br/>Glassmorphism Components]
+    end
+    
+    subgraph "Business Logic Layer"
+        Camera[Camera Controller<br/>Frame Processing]
+        Vision[MediaPipe<br/>Hand Landmarker]
+        ML[TFLite Models<br/>CNN + LSTM]
+    end
+    
+    subgraph "Data Layer"
+        Prefs[SharedPreferences<br/>Settings]
+        Assets[Assets<br/>Models + Images]
+    end
+    
+    subgraph "Services"
+        TTS[Flutter TTS<br/>Voice Synthesis]
+        STT[Speech to Text<br/>Voice Recognition]
+        Trans[Translator<br/>FR/EN/AR]
+        ESP32[ESP32-CAM<br/>HTTP Stream]
+    end
+    
+    UI --> Camera
+    UI --> Vision
+    Camera --> Vision
+    Vision --> ML
+    ML --> UI
+    UI --> TTS
+    UI --> STT
+    UI --> Trans
+    UI --> Prefs
+    UI --> ESP32
+```
+
+### Cas d'Utilisation
+
+![Diagramme Cas d'Utilisation](rapport_images/diagramme_cas_utilisation.png)
+
+**Acteurs principaux** :
+
+- 👤 **Utilisateur** : Personne sourde ou entendante utilisant l'app
+- 📷 **ESP32-CAM** : Caméra externe optionnelle
+
+**Cas d'utilisation** :
+
+1. Détecter gestes de la main
+2. Reconnaître lettres isolées
+3. Reconnaître mots en  séquence
+4. Traduire en parole (TTS)
+5. Sélectionner langue de traduction
+6. Mode inverse (Voix → Gestes)
+7. Configurer ESP32-CAM
+
+### Diagramme de Séquence - Mode Reconnaissance
+
+```mermaid
+sequenceDiagram
+    participant U as Utilisateur
+    participant RS as RecognitionScreen
+    participant C as Camera
+    participant HL as HandLandmarker
+    participant TF as TFLite
+    participant TTS as Text-to-Speech
+    
+    U->>RS: Ouvre Mode Reconnaissance
+    RS->>C: Initialise caméra frontale
+    C->>RS: Caméra prête
+    
+    loop Toutes les 4 frames
+        C->>HL: Envoie image (CameraImage)
+        HL->>HL: Détecte 21 landmarks
+        HL->>RS: Retourne landmarks normalisés
+        RS->>RS: Rotation landmarks (caméra frontale)
+        RS->>TF: Run inference (84 features)
+        TF->>TF: CNN/LSTM prediction
+        TF->>RS: Retourne (label, confidence)
+        
+        alt confidence > 0.85 (lettres) ou > 0.15 (mots)
+            RS->>RS: Update buffer + voting
+            RS->>U: Affiche lettre/mot
+            U->>RS: Appuie sur 🔊
+            RS->>TTS: speak(phrase, langue)
+            TTS->>U: AudioOutput
+        end
+    end
+```
+
+![Diagramme Séquence Reconnaissance](rapport_images/diagramme_sequence_reconnaissance.png)
+
+### Diagramme de Séquence - Mode Inverse
+
+```mermaid
+sequenceDiagram
+    participant U as Utilisateur
+    participant IS as InverseModeScreen
+    participant STT as Speech-to-Text
+    participant Assets as Gesture Assets
+    
+    U->>IS: Ouvre Mode Inverse
+    U->>IS: Appuie sur bouton micro 🎤
+    IS->>STT: startListening(langue)
+    
+    loop Écoute active
+        U->>STT: Parle
+        STT->>IS: onResult(texte reconnu)
+        IS->>IS: Update recognizedText
+        IS->>U: Affiche forme d'onde audio
+    end
+    
+    U->>IS: Stop micro
+    IS->>STT: stopListening()
+    IS->>IS: startGestureAnimation()
+    
+    loop Pour chaque lettre
+        IS->>Assets: Load gesture image (lettre_0.jpg)
+        Assets->>IS: Image geste
+        IS->>U: Affiche geste + highlight
+        IS->>IS: Wait selon vitesse (0.5s-2s)
+        IS->>IS: Increment currentLetterIndex
+    end
+    
+    IS->>U: Animation complète
+```
+
+![Diagramme Séquence Mode Inverse](rapport_images/diagramme_sequence_mode_inverse.png)
+
+### Diagramme de Classes
+
+![Diagramme de Classes](rapport_images/diagramme_classes.png)
+
+**Classes principales** :
+
+```mermaid
+classDiagram
+    class RecognitionScreen {
+        -CameraController _controller
+        -HandLandmarkerPlugin _plugin
+        -List~Hand~ _landmarks
+        -String detectedText
+        -String currentMode
+        +initCamera()
+        +processCameraImage()
+        +runInferenceLetters()
+        +runInferenceWords()
+        +translatePhrase()
+    }
+    
+    class InverseModeScreen {
+        -SpeechToText _speech
+        -String recognizedText
+        -double _speed
+        -int _currentLetterIndex
+        +toggleListening()
+        +startGestureAnimation()
+    }
+    
+    class AppTheme {
+        +Color primaryPurple
+        +Color accentCyan
+        +LinearGradient backgroundGradient
+        +glassmorphismDecoration()
+    }
+    
+    class HandPainter {
+        -List~List~double~~ hands
+        -int rotation
+        -bool isFrontCamera
+        +paint(Canvas, Size)
+        +shouldRepaint()
+    }
+    
+    class GlassmorphismCard {
+        -EdgeInsets padding
+        -double borderRadius
+        -Widget child
+        +build()
+    }
+    
+    RecognitionScreen --> HandPainter : uses
+    RecognitionScreen --> AppTheme : uses
+    RecognitionScreen --> GlassmorphismCard : uses
+    InverseModeScreen --> AppTheme : uses
+    InverseModeScreen --> GlassmorphismCard : uses
+```
+
+### Architecture On-Device
+
+![Architecture On-Device](rapport_images/architecture_on_device.png)
+
+**Pipeline de traitement** :
+
+1. **Capture** : CameraController (ResolutionPreset.low pour performance)
+2. **Détection** : MediaPipe Hand Landmarker (21 points × 2 mains)
+3. **Normalisation** : Rotation + tri + normalisation des landmarks
+4. **Inférence** : TFLite (CNN pour lettres, LSTM pour mots)
+5. **Post-traitement** : Buffer voting + confidence thresholds
+6. **Traduction** : Translator FR/EN/AR
+7. **Sortie** : TTS multilingue
+
+### Pipeline de Données
+
+![Data Flow Pipeline](rapport_images/data_flow_pipeline_1769768053843.png)
+
+### Métriques de Performance
+
+![Performance Metrics](rapport_images/performance_metrics_1769768116914.png)
+
+**Optimisations** :
+
+- ✅ Frame skipping (process every 4th frame)
+- ✅ Résolution caméra basse (low preset)
+- ✅ Buffer voting (5 frames) pour stabilité
+- ✅ Thresholds adaptatifs (0.85 lettres, 0.15 mots)
+- ✅ Cooldown entre détections (1.5s)
+
+---
+
 ## 📦 Installation
 
 ### Prérequis

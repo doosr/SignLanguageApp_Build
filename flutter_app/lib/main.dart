@@ -7,6 +7,7 @@ import 'package:tflite_flutter/tflite_flutter.dart';
 import 'package:hand_landmarker/hand_landmarker.dart';
 import 'package:flutter/services.dart';
 import 'package:translator/translator.dart';
+import 'screens/splash_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/recognition_screen.dart';
 import 'screens/inverse_mode_screen.dart';
@@ -21,7 +22,7 @@ Future<void> main() async {
   try {
     cameras = await availableCameras();
   } on CameraException catch (e) {
-    print('Error: $e.code\\nError Message: $e.message');
+    print('Error: $e.code\nError Message: $e.message');
   }
   runApp(const MyApp());
 }
@@ -35,8 +36,9 @@ class MyApp extends StatelessWidget {
       title: 'SignLanguage App',
       theme: AppTheme.darkTheme,
       debugShowCheckedModeBanner: false,
-      initialRoute: '/',
+      initialRoute: '/splash',
       routes: {
+        '/splash': (context) => const SplashScreen(),
         '/': (context) => const HomeScreen(),
         '/recognition': (context) => const RecognitionScreen(),
         '/inverse': (context) => const InverseModeScreen(),
