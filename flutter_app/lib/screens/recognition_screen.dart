@@ -128,15 +128,7 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
   Future<void> _initializeSafe() async {
     await _requestPermissions();
     
-    try {
-      await Future.wait([
-        _loadModels(),
-        _initPlugin(),
-      ]);
-    } catch (e) {
-      print("Initialization parallel error: $e");
-    }
-
+    // Initialize camera in parallel with models for faster startup
     if (cameras.isEmpty) {
       try {
         cameras = await availableCameras();
@@ -145,7 +137,18 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       }
     }
     
-    if (mounted) _initCamera();
+    // Start camera and models loading in parallel
+    final cameraFuture = mounted ? _initCamera() : Future.value();
+    
+    try {
+      await Future.wait([
+        _loadModels(),
+        _initPlugin(),
+        cameraFuture,
+      ]);
+    } catch (e) {
+      print("Initialization parallel error: $e");
+    }
   }
 
   Future<void> _initPlugin() async {
@@ -207,7 +210,7 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
     if (_isDetecting || _plugin == null) return;
     
     _frameCounter++;
-    if (_frameCounter % 6 != 0) return; // Skip more frames for better performance
+    if (_frameCounter % 8 != 0) return; // Skip even more frames for maximum performance
     
     _isDetecting = true;
     
@@ -353,15 +356,15 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
         }
       }
 
-      if (maxProb > 0.15) {
+      if (maxProb > 0.10) { // Lower threshold for better word detection
         String label = _labelsWords[maxIdx];
         
         _wordCandidateHistory.add(label);
-        if (_wordCandidateHistory.length > 10) _wordCandidateHistory.removeAt(0);
+        if (_wordCandidateHistory.length > 8) _wordCandidateHistory.removeAt(0);
         
         int freq = _wordCandidateHistory.where((e) => e == label).length;
         
-        if (freq >= 5 && detectedText != label) {
+        if (freq >= 4 && detectedText != label) { // Reduced from 5 to 4
            _onGestureDetected(label);
            _wordCandidateHistory.clear();
            _sequenceBuffer.clear();
