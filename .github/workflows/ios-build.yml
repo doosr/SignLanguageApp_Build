@@ -1,0 +1,85 @@
+name: Build iOS IPA
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-ios:
+    runs-on: macos-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.27.2'
+        channel: 'stable'
+        
+    - name: Enable iOS
+      run: flutter config --enable-ios
+      working-directory: flutter_app
+      
+    - name: Install dependencies
+      run: flutter pub get
+      working-directory: flutter_app
+      
+    - name: Create iOS folders if needed
+      run: flutter create --platforms=ios .
+      working-directory: flutter_app
+      
+    # Pour un build avec certificats (nécessite Apple Developer Account)
+    # - name: Import Code-Signing Certificates
+    #   if: github.event_name == 'push'
+    #   uses: Apple-Actions/import-codesign-certs@v2
+    #   with:
+    #     p12-file-base64: ${{ secrets.IOS_BUILD_CERTIFICATE_BASE64 }}
+    #     p12-password: ${{ secrets.IOS_P12_PASSWORD }}
+    
+    # - name: Install Provisioning Profile
+    #   if: github.event_name == 'push'
+    #   uses: Apple-Actions/download-provisioning-profiles@v1
+    #   with:
+    #     bundle-id: com.example.signLanguageApp
+    #     issuer-id: ${{ secrets.APPSTORE_ISSUER_ID }}
+    #     api-key-id: ${{ secrets.APPSTORE_KEY_ID }}
+    #     api-private-key: ${{ secrets.APPSTORE_PRIVATE_KEY }}
+      
+    - name: Build iOS (No Codesign - for testing)
+      run: flutter build ios --release --no-codesign
+      working-directory: flutter_app
+      
+    # Pour créer un IPA signé (nécessite certificats)
+    # - name: Build IPA
+    #   run: flutter build ipa --release
+    #   working-directory: flutter_app
+      
+    - name: Create IPA archive (unsigned - for testing)
+      run: |
+        cd flutter_app/build/ios/iphoneos
+        mkdir -p Payload
+        cp -r Runner.app Payload/
+        zip -r SignLanguageApp-iOS-Unsigned.ipa Payload
+      shell: bash
+      
+    - name: Upload iOS IPA (Unsigned)
+      uses: actions/upload-artifact@v4
+      with:
+        name: SignLanguageApp-iOS-Unsigned
+        path: flutter_app/build/ios/iphoneos/SignLanguageApp-iOS-Unsigned.ipa
+        if-no-files-found: warn
+        
+    # Pour upload sur App Store (nécessite certificats)
+    # - name: Upload to TestFlight
+    #   if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    #   uses: Apple-Actions/upload-testflight-build@v1
+    #   with:
+    #     app-path: flutter_app/build/ios/ipa/*.ipa
+    #     issuer-id: ${{ secrets.APPSTORE_ISSUER_ID }}
+    #     api-key-id: ${{ secrets.APPSTORE_KEY_ID }}
+    #     api-private-key: ${{ secrets.APPSTORE_PRIVATE_KEY }}
