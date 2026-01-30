@@ -137,18 +137,17 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       }
     }
     
-    // Start camera and models loading in parallel
-    final cameraFuture = mounted ? _initCamera() : Future.value();
-    
     try {
       await Future.wait([
         _loadModels(),
         _initPlugin(),
-        cameraFuture,
       ]);
     } catch (e) {
       print("Initialization parallel error: $e");
     }
+    
+    // Initialize camera after models are loaded
+    if (mounted) await _initCamera();
   }
 
   Future<void> _initPlugin() async {
@@ -185,7 +184,7 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
     }
   }
 
-  void _initCamera() async {
+  Future<void> _initCamera() async {
     if (cameras.isEmpty) return;
     CameraDescription selectedCamera = cameras.firstWhere(
       (cam) => cam.lensDirection == CameraLensDirection.front, 
