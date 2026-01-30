@@ -9,7 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:translator/translator.dart';
 import 'dart:io' show Platform;
 import 'screens/splash_screen.dart';
-import 'screens/welcome_screen.dart';
+import 'screens/home_screen.dart';
 import 'screens/recognition_screen.dart';
 import 'screens/inverse_mode_screen.dart';
 import 'screens/language_selection_screen.dart';
@@ -47,7 +47,7 @@ class MyApp extends StatelessWidget {
       initialRoute: '/splash',
       routes: {
         '/splash': (context) => const SplashScreen(),
-        '/': (context) => const WelcomeScreen(),
+        '/': (context) => const HomeScreen(),
         '/recognition': (context) => const RecognitionScreen(),
         '/inverse': (context) => const InverseModeScreen(),
         '/language': (context) => const LanguageSelectionScreen(),
