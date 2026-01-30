@@ -182,22 +182,32 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
     }
   }
 
-  void _initCamera() {
+  void _initCamera() async {
     if (cameras.isEmpty) return;
-    CameraDescription selectedCamera = cameras.firstWhere((cam) => cam.lensDirection == CameraLensDirection.front, orElse: () => cameras[0]);
-    _controller = CameraController(selectedCamera, ResolutionPreset.low, enableAudio: false);
-    _controller?.initialize().then((_) {
-      if (!mounted) return;
-      _controller?.startImageStream(_processCameraImage);
-      setState(() {});
-    });
+    CameraDescription selectedCamera = cameras.firstWhere(
+      (cam) => cam.lensDirection == CameraLensDirection.front, 
+      orElse: () => cameras[0]
+    );
+    
+    _controller = CameraController(
+      selectedCamera, 
+      ResolutionPreset.medium,
+      enableAudio: false,
+      imageFormatGroup: ImageFormatGroup.yuv420,
+    );
+    
+    await _controller?.initialize();
+    if (!mounted) return;
+    
+    _controller?.startImageStream(_processCameraImage);
+    if (mounted) setState(() {});
   }
 
   void _processCameraImage(CameraImage image) async {
     if (_isDetecting || _plugin == null) return;
     
     _frameCounter++;
-    if (_frameCounter % 4 != 0) return;
+    if (_frameCounter % 6 != 0) return; // Skip more frames for better performance
     
     _isDetecting = true;
     
