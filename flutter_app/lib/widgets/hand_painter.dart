@@ -23,61 +23,70 @@ class HandPainter extends CustomPainter {
         }
       }
 
-      final paintPalm = Paint()..color = Colors.white.withOpacity(0.8)..strokeWidth = 3.0..style = PaintingStyle.stroke;
-      final paintThumb = Paint()..color = const Color(0xFFFF9100)..strokeWidth = 4.0..style = PaintingStyle.stroke..strokeCap = StrokeCap.round;
-      final paintIndex = Paint()..color = const Color(0xFF00E676)..strokeWidth = 4.0..style = PaintingStyle.stroke..strokeCap = StrokeCap.round;
-      final paintMiddle = Paint()..color = const Color(0xFF2979FF)..strokeWidth = 4.0..style = PaintingStyle.stroke..strokeCap = StrokeCap.round;
-      final paintRing = Paint()..color = const Color(0xFFFF1744)..strokeWidth = 4.0..style = PaintingStyle.stroke..strokeCap = StrokeCap.round;
-      final paintPinky = Paint()..color = const Color(0xFFD500F9)..strokeWidth = 4.0..style = PaintingStyle.stroke..strokeCap = StrokeCap.round;
+      // Cyan/Turquoise theme matching mockup
+      final paintLines = Paint()
+        ..color = Color(0xFF06b6d4) // Cyan color
+        ..strokeWidth = 3.0
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round;
 
-      // Palm
-      draw(0, 1, paintPalm);
-      draw(0, 5, paintPalm);
-      draw(0, 17, paintPalm);
-      draw(5, 9, paintPalm);
-      draw(9, 13, paintPalm);
-      draw(13, 17, paintPalm);
+      // Palm connections
+      draw(0, 1, paintLines);
+      draw(0, 5, paintLines);
+      draw(0, 17, paintLines);
+      draw(5, 9, paintLines);
+      draw(9, 13, paintLines);
+      draw(13, 17, paintLines);
 
-      // Fingers
-      draw(1, 2, paintThumb);
-      draw(2, 3, paintThumb);
-      draw(3, 4, paintThumb);
+      // Thumb
+      draw(1, 2, paintLines);
+      draw(2, 3, paintLines);
+      draw(3, 4, paintLines);
       
-      draw(5, 6, paintIndex);
-      draw(6, 7, paintIndex);
-      draw(7, 8, paintIndex);
+      // Index
+      draw(5, 6, paintLines);
+      draw(6, 7, paintLines);
+      draw(7, 8, paintLines);
       
-      draw(9, 10, paintMiddle);
-      draw(10, 11, paintMiddle);
-      draw(11, 12, paintMiddle);
+      // Middle
+      draw(9, 10, paintLines);
+      draw(10, 11, paintLines);
+      draw(11, 12, paintLines);
       
-      draw(13, 14, paintRing);
-      draw(14, 15, paintRing);
-      draw(15, 16, paintRing);
+      // Ring
+      draw(13, 14, paintLines);
+      draw(14, 15, paintLines);
+      draw(15, 16, paintLines);
       
-      draw(17, 18, paintPinky);
-      draw(18, 19, paintPinky);
-      draw(19, 20, paintPinky);
+      // Pinky
+      draw(17, 18, paintLines);
+      draw(18, 19, paintLines);
+      draw(19, 20, paintLines);
       
-      // Draw landmarks points
+      // Draw landmarks points with cyan glow
       for (int i = 0; i < pts.length; i++) {
-        Color dotColor = Colors.cyanAccent;
-        double radius = 5;
+        // Glow effect
+        canvas.drawCircle(
+          pts[i], 
+          8, 
+          Paint()
+            ..color = Color(0xFF06b6d4).withOpacity(0.3)
+            ..maskFilter = MaskFilter.blur(BlurStyle.normal, 4),
+        );
         
-        if (i >= 1 && i <= 4) dotColor = const Color(0xFFFF9100);
-        else if (i >= 5 && i <= 8) dotColor = const Color(0xFF00E676);
-        else if (i >= 9 && i <= 12) dotColor = const Color(0xFF2979FF);
-        else if (i >= 13 && i <= 16) dotColor = const Color(0xFFFF1744);
-        else if (i >= 17 && i <= 20) dotColor = const Color(0xFFD500F9);
-        else if (i == 0) dotColor = Colors.yellowAccent;
-
-        if (i == 4 || i == 8 || i == 12 || i == 16 || i == 20) {
-          radius = 7;
-          canvas.drawCircle(pts[i], radius + 2, Paint()..color = Colors.white.withOpacity(0.5));
-        }
-
-        canvas.drawCircle(pts[i], radius, Paint()..color = dotColor);
-        canvas.drawCircle(pts[i], 2, Paint()..color = Colors.white);
+        // Outer cyan circle
+        canvas.drawCircle(
+          pts[i], 
+          5, 
+          Paint()..color = Color(0xFF06b6d4),
+        );
+        
+        // Inner white dot
+        canvas.drawCircle(
+          pts[i], 
+          2, 
+          Paint()..color = Colors.white,
+        );
       }
     }
   }
