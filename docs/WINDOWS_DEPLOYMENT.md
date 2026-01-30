@@ -28,7 +28,7 @@ flutter_app/build/windows/x64/runner/Release/
 
 **Option 1 : ZIP Complet (Recommandé)**
 
-```powershell
+```bash
 # Le workflow GitHub crée déjà un ZIP avec TOUS les fichiers
 # Téléchargez SignLanguageApp-Windows.zip
 # Décompressez-le
@@ -69,11 +69,11 @@ flutter pub run msix:create
 1. Hébergez le ZIP complet sur votre site
 2. Fournissez des instructions claires :
 
-   ```
-   1. Téléchargez SignLanguageApp-Windows.zip
-   2. Décompressez dans un dossier
-   3. Double-cliquez sur sign_language_app.exe
-   ```
+```text
+1. Téléchargez SignLanguageApp-Windows.zip
+2. Décompressez dans un dossier
+3. Double-cliquez sur sign_language_app.exe
+```
 
 **Méthode 3 : Installateur (Avancé)**
 Utilisez MSIX ou Inno Setup pour créer un vrai installateur
