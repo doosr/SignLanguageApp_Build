@@ -145,7 +145,6 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       }
     }
     
-    await Future.delayed(const Duration(milliseconds: 500));
     if (mounted) _initCamera();
   }
 
@@ -432,6 +431,11 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
 
   Future<void> _translatePhrase(String newLang) async {
     setState(() => _selectedLanguage = newLang);
+    
+    // Save language preference
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('language', newLang);
+    
     if (phrase.isEmpty) return;
     
     String upperPhrase = phrase.toUpperCase().trim();

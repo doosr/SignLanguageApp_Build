@@ -78,14 +78,14 @@ class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
                 
                 const SizedBox(height: 20),
                 
-                _buildLanguageCard(
+                  _buildLanguageCard(
                   flag: '🇬🇧',
                   language: 'English',
-                  isSelected: _selectedLanguage == 'English',
+                  isSelected: _selectedLanguage == 'Anglais',
                   onTap: () {
-                    _saveLanguage('English');
+                    _saveLanguage('Anglais');
                     Future.delayed(const Duration(milliseconds: 300), () {
-                      Navigator.pop(context, 'English');
+                      Navigator.pop(context, 'Anglais');
                     });
                   },
                 ),
