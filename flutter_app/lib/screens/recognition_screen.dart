@@ -1037,7 +1037,7 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
               const SizedBox(height: 8),
               Text(
                 'Retour à la caméra du téléphone...',
-                style: AppTheme.bodySmall.copyWith(color: Colors.white54),
+                style: AppTheme.bodyMedium.copyWith(color: Colors.white54, fontSize: 12),
               ),
             ],
           ),
@@ -1083,7 +1083,7 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
                 const SizedBox(height: 8),
                 Text(
                   'Basculement vers caméra téléphone...',
-                  style: AppTheme.bodySmall.copyWith(color: Colors.white54),
+                  style: AppTheme.bodyMedium.copyWith(color: Colors.white54, fontSize: 12),
                 ),
               ],
             ),
