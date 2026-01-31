@@ -130,29 +130,32 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
     // Check ESP32 camera availability
     _useESP32Camera = _esp32Service.isEnabled.value && _esp32Service.isConnected.value;
     
-    // Request permissions
-    await _requestPermissions();
+    // Request permissions first (non-blocking)
+    _requestPermissions();
     
-    // Parallel initialization for maximum speed
-    await Future.wait([
-      _loadModels(),
-      _initPlugin(),
-      _initCamera(),
-    ]);
+    // Initialize camera FIRST for faster display
+    await _initCamera();
     
+    // Show camera immediately
     if (mounted) {
       setState(() {
         _isInitializing = false;
       });
     }
+    
+    // Load models and plugin in background
+    Future.wait([
+      _loadModels(),
+      _initPlugin(),
+    ]);
   }
 
   Future<void> _initPlugin() async {
     try {
       _plugin = HandLandmarkerPlugin.create(
         numHands: 2,
-        minHandDetectionConfidence: 0.7,
-        delegate: HandLandmarkerDelegate.gpu,
+        minHandDetectionConfidence: 0.5, // Lowered for better detection
+        delegate: HandLandmarkerDelegate.gpu, // GPU for performance
       );
       print("✅ HandLandmarkerPlugin initialized");
     } catch (e) {
@@ -185,7 +188,6 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
     // Check if we should use ESP32 camera
     if (_useESP32Camera) {
       // ESP32 camera doesn't need CameraController
-      // We'll use HTTP stream instead
       print("✅ Using ESP32-CAM stream");
       return;
     }
@@ -209,7 +211,7 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
     
     _controller = CameraController(
       selectedCamera, 
-      ResolutionPreset.low, // Changed from medium to low for better performance
+      ResolutionPreset.low, // Low for best performance
       enableAudio: false,
       imageFormatGroup: ImageFormatGroup.yuv420,
     );
@@ -218,7 +220,9 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       await _controller?.initialize();
       if (!mounted) return;
       
+      // Start image stream immediately
       _controller?.startImageStream(_processCameraImage);
+      print("✅ Camera initialized and streaming");
     } catch (e) {
       print("Camera init error: $e");
     }
@@ -228,7 +232,7 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
     if (_isDetecting || _plugin == null) return;
     
     _frameCounter++;
-    if (_frameCounter % 10 != 0) return; // Increased frame skipping for better performance
+    if (_frameCounter % 12 != 0) return; // Increased frame skipping for better performance
     
     _isDetecting = true;
     
