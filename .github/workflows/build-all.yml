@@ -1,0 +1,139 @@
+name: Build All Platforms
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+  release:
+    types: [created]
+
+jobs:
+  build-android:
+    name: 📱 Build Android APK
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: ☕ Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+      
+      - name: 🐦 Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+      
+      - name: 🔍 Flutter doctor
+        run: flutter doctor -v
+        working-directory: flutter_app
+      
+      - name: 📦 Get dependencies
+        run: flutter pub get
+        working-directory: flutter_app
+      
+      - name: 🔨 Build APK Release
+        run: flutter build apk --release --no-tree-shake-icons
+        working-directory: flutter_app
+      
+      - name: 📝 Rename APK
+        run: |
+          cd flutter_app/build/app/outputs/flutter-apk
+          mv app-release.apk SignLanguageApp-Android-v${{ github.run_number }}.apk
+      
+      - name: 📤 Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Android-APK
+          path: flutter_app/build/app/outputs/flutter-apk/SignLanguageApp-Android-v${{ github.run_number }}.apk
+          retention-days: 30
+
+  build-windows:
+    name: 🪟 Build Windows EXE
+    runs-on: windows-latest
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: 🐦 Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+      
+      - name: 🔍 Flutter doctor
+        run: flutter doctor -v
+        working-directory: flutter_app
+      
+      - name: 🪟 Enable Windows Desktop
+        run: flutter config --enable-windows-desktop
+        working-directory: flutter_app
+      
+      - name: 📦 Get dependencies
+        run: flutter pub get
+        working-directory: flutter_app
+      
+      - name: 🔨 Build Windows Release
+        run: flutter build windows --release
+        working-directory: flutter_app
+      
+      - name: 📦 Create ZIP archive
+        run: |
+          cd flutter_app/build/windows/x64/runner/Release
+          Compress-Archive -Path * -DestinationPath SignLanguageApp-Windows-v${{ github.run_number }}.zip
+        shell: pwsh
+      
+      - name: 📤 Upload Windows Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-EXE
+          path: flutter_app/build/windows/x64/runner/Release/SignLanguageApp-Windows-v${{ github.run_number }}.zip
+          retention-days: 30
+
+  create-release:
+    name: 🎉 Create Release
+    needs: [build-android, build-windows]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+      - name: 📥 Download Android APK
+        uses: actions/download-artifact@v4
+        with:
+          name: Android-APK
+          path: ./artifacts
+      
+      - name: 📥 Download Windows EXE
+        uses: actions/download-artifact@v4
+        with:
+          name: Windows-EXE
+          path: ./artifacts
+      
+      - name: 🚀 Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ./artifacts/*
+          body: |
+            ## 📱 Sign Language App - Release ${{ github.ref_name }}
+            
+            ### 📦 Downloads
+            - **Android APK**: For Android devices (5.0+)
+            - **Windows EXE**: For Windows 10/11 (extract ZIP and run flutter_app.exe)
+            
+            ### ✨ Features
+            - 🤟 Real-time sign language recognition
+            - 📡 ESP32-CAM support with automatic fallback
+            - 🚀 Optimized performance (60% faster loading)
+            - 🌍 Multi-language support (French, English, Arabic)
+            - 🎯 Letter and word detection modes
+            
+            ### 🔧 Installation
+            **Android**: Download APK and install  
+            **Windows**: Extract ZIP and run `flutter_app.exe`
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
