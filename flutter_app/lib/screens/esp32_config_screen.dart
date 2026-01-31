@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'dart:ui';
+import '../services/esp32_camera_service.dart';
 
 class ESP32ConfigScreen extends StatefulWidget {
   const ESP32ConfigScreen({Key? key}) : super(key: key);
@@ -53,13 +54,41 @@ class _ESP32ConfigScreenState extends State<ESP32ConfigScreen> {
       });
 
       if (_isConnected) {
+        // Auto-save on successful connection
         await _saveSettings();
+        
+        // Notify ESP32CameraService
+        final esp32Service = ESP32CameraService();
+        await esp32Service.setIpAddress(_ipController.text);
+        if (_cameraEnabled) {
+          await esp32Service.setEnabled(true);
+        }
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✓ Connexion réussie et sauvegardée'),
+              backgroundColor: Color(0xFF4ade80),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
       }
     } catch (e) {
       setState(() {
         _isConnected = false;
         _isTesting = false;
       });
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✗ Échec de connexion: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
     }
   }
 
@@ -297,6 +326,10 @@ class _ESP32ConfigScreenState extends State<ESP32ConfigScreen> {
                                         _cameraEnabled = !_cameraEnabled;
                                       });
                                       await _saveSettings();
+                                      
+                                      // Notify ESP32CameraService
+                                      final esp32Service = ESP32CameraService();
+                                      await esp32Service.setEnabled(_cameraEnabled);
                                     },
                                     child: Container(
                                       width: 80,

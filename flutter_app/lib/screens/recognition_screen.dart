@@ -14,6 +14,8 @@ import '../widgets/glassmorphism_card.dart';
 import '../widgets/language_flag_button.dart';
 import '../widgets/hand_painter.dart';
 import '../main.dart';
+import '../services/esp32_camera_service.dart';
+import 'package:http/http.dart' as http;
 
 class RecognitionScreen extends StatefulWidget {
   const RecognitionScreen({Key? key}) : super(key: key);
@@ -27,6 +29,7 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
   CameraController? _controller;
   FlutterTts flutterTts = FlutterTts();
   final GoogleTranslator _translator = GoogleTranslator();
+  final ESP32CameraService _esp32Service = ESP32CameraService();
   
   // Vision
   HandLandmarkerPlugin? _plugin;
@@ -40,7 +43,9 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
   String currentMode = "LETTRES"; 
   String? _pendingWord;
   String? _pendingEmoji;
-  int _sensorRotation = 0; 
+  int _sensorRotation = 0;
+  bool _isInitializing = true;
+  bool _useESP32Camera = false; 
   
   // Buffers
   final List<String> _letterBuffer = [];
@@ -114,40 +119,32 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
   @override
   void initState() {
     super.initState();
-    _initializeSafe();
-    _loadLanguage();
+    _initializeFast();
   }
 
-  Future<void> _loadLanguage() async {
+  Future<void> _initializeFast() async {
+    // Load language preference immediately
     final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _selectedLanguage = prefs.getString('language') ?? 'Français';
-    });
-  }
-
-  Future<void> _initializeSafe() async {
+    _selectedLanguage = prefs.getString('language') ?? 'Français';
+    
+    // Check ESP32 camera availability
+    _useESP32Camera = _esp32Service.isEnabled.value && _esp32Service.isConnected.value;
+    
+    // Request permissions
     await _requestPermissions();
     
-    // Initialize camera in parallel with models for faster startup
-    if (cameras.isEmpty) {
-      try {
-        cameras = await availableCameras();
-      } catch (e) {
-        print("Camera info error: $e");
-      }
-    }
+    // Parallel initialization for maximum speed
+    await Future.wait([
+      _loadModels(),
+      _initPlugin(),
+      _initCamera(),
+    ]);
     
-    try {
-      await Future.wait([
-        _loadModels(),
-        _initPlugin(),
-      ]);
-    } catch (e) {
-      print("Initialization parallel error: $e");
+    if (mounted) {
+      setState(() {
+        _isInitializing = false;
+      });
     }
-    
-    // Initialize camera after models are loaded
-    if (mounted) await _initCamera();
   }
 
   Future<void> _initPlugin() async {
@@ -185,7 +182,26 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
   }
 
   Future<void> _initCamera() async {
+    // Check if we should use ESP32 camera
+    if (_useESP32Camera) {
+      // ESP32 camera doesn't need CameraController
+      // We'll use HTTP stream instead
+      print("✅ Using ESP32-CAM stream");
+      return;
+    }
+    
+    // Use phone camera
+    if (cameras.isEmpty) {
+      try {
+        cameras = await availableCameras();
+      } catch (e) {
+        print("Camera error: $e");
+        return;
+      }
+    }
+    
     if (cameras.isEmpty) return;
+    
     CameraDescription selectedCamera = cameras.firstWhere(
       (cam) => cam.lensDirection == CameraLensDirection.front, 
       orElse: () => cameras[0]
@@ -193,23 +209,26 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
     
     _controller = CameraController(
       selectedCamera, 
-      ResolutionPreset.medium,
+      ResolutionPreset.low, // Changed from medium to low for better performance
       enableAudio: false,
       imageFormatGroup: ImageFormatGroup.yuv420,
     );
     
-    await _controller?.initialize();
-    if (!mounted) return;
-    
-    _controller?.startImageStream(_processCameraImage);
-    if (mounted) setState(() {});
+    try {
+      await _controller?.initialize();
+      if (!mounted) return;
+      
+      _controller?.startImageStream(_processCameraImage);
+    } catch (e) {
+      print("Camera init error: $e");
+    }
   }
 
   void _processCameraImage(CameraImage image) async {
     if (_isDetecting || _plugin == null) return;
     
     _frameCounter++;
-    if (_frameCounter % 8 != 0) return; // Skip even more frames for maximum performance
+    if (_frameCounter % 10 != 0) return; // Increased frame skipping for better performance
     
     _isDetecting = true;
     
@@ -499,11 +518,48 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_controller == null || !_controller!.value.isInitialized) {
+    // Show loading indicator during initialization
+    if (_isInitializing) {
       return Scaffold(
         body: Container(
           decoration: const BoxDecoration(gradient: AppTheme.backgroundGradient),
-          child: const Center(child: CircularProgressIndicator(color: AppTheme.accentCyan)),
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const CircularProgressIndicator(color: AppTheme.accentCyan),
+                const SizedBox(height: 20),
+                Text(
+                  'Chargement...',
+                  style: AppTheme.bodyLarge.copyWith(color: AppTheme.textPrimary),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+    
+    // Check if using ESP32 camera or phone camera
+    bool hasCamera = _useESP32Camera || (_controller != null && _controller!.value.isInitialized);
+    
+    if (!hasCamera) {
+      return Scaffold(
+        body: Container(
+          decoration: const BoxDecoration(gradient: AppTheme.backgroundGradient),
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.camera_alt_outlined, size: 64, color: AppTheme.textMuted),
+                const SizedBox(height: 20),
+                Text(
+                  'Caméra non disponible',
+                  style: AppTheme.bodyLarge.copyWith(color: AppTheme.textPrimary),
+                ),
+              ],
+            ),
+          ),
         ),
       );
     }
@@ -761,7 +817,41 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            CameraPreview(_controller!),
+            // Camera Preview (ESP32 or Phone)
+            _useESP32Camera ? _buildESP32Stream() : CameraPreview(_controller!),
+            
+            // Camera source indicator
+            Positioned(
+              top: 12,
+              right: 12,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.6),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.white.withOpacity(0.2)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      _useESP32Camera ? Icons.wifi : Icons.phone_android,
+                      size: 14,
+                      color: _useESP32Camera ? AppTheme.accentCyan : Colors.white70,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      _useESP32Camera ? 'ESP32' : 'Téléphone',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
             
             // Hand Landmarks Overlay
             ValueListenableBuilder<List<List<double>>>(
@@ -910,6 +1000,82 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
           ),
         ),
       ),
+    );
+  }
+  
+  // Widget for ESP32-CAM stream
+  Widget _buildESP32Stream() {
+    final streamUrl = _esp32Service.getStreamUrl();
+    
+    if (streamUrl == null) {
+      return Container(
+        color: Colors.black,
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.wifi_off, size: 48, color: Colors.white54),
+              const SizedBox(height: 12),
+              Text(
+                'ESP32-CAM non disponible',
+                style: AppTheme.bodyMedium.copyWith(color: Colors.white70),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Retour à la caméra du téléphone...',
+                style: AppTheme.bodySmall.copyWith(color: Colors.white54),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    
+    return Image.network(
+      streamUrl,
+      fit: BoxFit.cover,
+      loadingBuilder: (context, child, loadingProgress) {
+        if (loadingProgress == null) return child;
+        return Container(
+          color: Colors.black,
+          child: const Center(
+            child: CircularProgressIndicator(color: AppTheme.accentCyan),
+          ),
+        );
+      },
+      errorBuilder: (context, error, stackTrace) {
+        // Fallback to phone camera on error
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            setState(() {
+              _useESP32Camera = false;
+            });
+            _initCamera();
+          }
+        });
+        
+        return Container(
+          color: Colors.black,
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                const SizedBox(height: 12),
+                Text(
+                  'Erreur de connexion ESP32',
+                  style: AppTheme.bodyMedium.copyWith(color: Colors.white70),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Basculement vers caméra téléphone...',
+                  style: AppTheme.bodySmall.copyWith(color: Colors.white54),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

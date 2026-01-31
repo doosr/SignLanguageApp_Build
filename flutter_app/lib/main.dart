@@ -15,6 +15,7 @@ import 'screens/inverse_mode_screen.dart';
 import 'screens/language_selection_screen.dart';
 import 'screens/esp32_config_screen.dart';
 import 'theme/app_theme.dart';
+import 'services/esp32_camera_service.dart';
 
 List<CameraDescription> cameras = [];
 
@@ -26,6 +27,10 @@ Future<void> main() async {
     // Ensure window is visible and properly sized
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   }
+  
+  // Initialize ESP32 camera service
+  final esp32Service = ESP32CameraService();
+  await esp32Service.initialize();
   
   try {
     cameras = await availableCameras();
