@@ -295,12 +295,25 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
   List<double> _processHandLandmarksForClassifier(List<List<double>> hands) {
     if (hands.isEmpty) return List.filled(84, 0.0);
 
+    // Sort hands left to right
     List<List<double>> sorted = List.from(hands);
     sorted.sort((a, b) => a[0].compareTo(b[0]));
     
     List<double> rawAll = [];
-    for (var h in sorted) rawAll.addAll(h);
     
+    // Handle single hand vs two hands
+    if (sorted.length == 1) {
+      // Single hand: duplicate it for consistency with 2-hand model
+      rawAll.addAll(sorted[0]);
+      rawAll.addAll(sorted[0]);
+    } else {
+      // Two hands: use both (take max 2)
+      for (var h in sorted.take(2)) {
+        rawAll.addAll(h);
+      }
+    }
+    
+    // Normalize coordinates relative to minimum point
     double minX = 1.0, minY = 1.0; 
     for (int i = 0; i < rawAll.length; i += 2) {
       if (rawAll[i] < minX) minX = rawAll[i];
@@ -313,6 +326,7 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       processed.add(rawAll[i + 1] - minY);
     }
     
+    // Ensure exactly 84 features
     while (processed.length < 84) processed.add(0.0);
     return processed.sublist(0, 84);
   }
@@ -374,7 +388,7 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
         }
       }
 
-      if (maxProb > 0.10) { // Lower threshold for better word detection
+      if (maxProb > 0.60) { // Improved threshold for better word detection
         String label = _labelsWords[maxIdx];
         
         _wordCandidateHistory.add(label);
@@ -382,7 +396,7 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
         
         int freq = _wordCandidateHistory.where((e) => e == label).length;
         
-        if (freq >= 4 && detectedText != label) { // Reduced from 5 to 4
+        if (freq >= 3 && detectedText != label) { // Reduced from 4 to 3 for faster response
            _onGestureDetected(label);
            _wordCandidateHistory.clear();
            _sequenceBuffer.clear();
