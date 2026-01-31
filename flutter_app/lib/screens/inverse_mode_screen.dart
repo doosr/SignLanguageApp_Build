@@ -29,6 +29,36 @@ class _InverseModeScreenState extends State<InverseModeScreen> with TickerProvid
     'Arabe': 'ar-SA',
   };
   
+  // Letter to gesture mapping for Arabic sign language
+  final Map<String, Map<String, String>> _letterToGesture = {
+    "A": {"Français": "A", "Anglais": "A", "Arabe": "أ"},
+    "B": {"Français": "B", "Anglais": "B", "Arabe": "ب"},
+    "C": {"Français": "C", "Anglais": "C", "Arabe": "ث"},
+    "D": {"Français": "D", "Anglais": "D", "Arabe": "د"},
+    "E": {"Français": "E", "Anglais": "E", "Arabe": "إ"},
+    "F": {"Français": "F", "Anglais": "F", "Arabe": "ف"},
+    "G": {"Français": "G", "Anglais": "G", "Arabe": "ج"},
+    "H": {"Français": "H", "Anglais": "H", "Arabe": "ه"},
+    "I": {"Français": "I", "Anglais": "I", "Arabe": "ي"},
+    "J": {"Français": "J", "Anglais": "J", "Arabe": "ج"},
+    "K": {"Français": "K", "Anglais": "K", "Arabe": "ك"},
+    "L": {"Français": "L", "Anglais": "L", "Arabe": "ل"},
+    "M": {"Français": "M", "Anglais": "M", "Arabe": "م"},
+    "N": {"Français": "N", "Anglais": "N", "Arabe": "ن"},
+    "O": {"Français": "O", "Anglais": "O", "Arabe": "و"},
+    "P": {"Français": "P", "Anglais": "P", "Arabe": "ب"},
+    "Q": {"Français": "Q", "Anglais": "Q", "Arabe": "ق"},
+    "R": {"Français": "R", "Anglais": "R", "Arabe": "ر"},
+    "S": {"Français": "S", "Anglais": "S", "Arabe": "س"},
+    "T": {"Français": "T", "Anglais": "T", "Arabe": "ت"},
+    "U": {"Français": "U", "Anglais": "U", "Arabe": "و"},
+    "V": {"Français": "V", "Anglais": "V", "Arabe": "ف"},
+    "W": {"Français": "W", "Anglais": "W", "Arabe": "و"},
+    "X": {"Français": "X", "Anglais": "X", "Arabe": "كس"},
+    "Y": {"Français": "Y", "Anglais": "Y", "Arabe": "ي"},
+    "Z": {"Français": "Z", "Anglais": "Z", "Arabe": "ز"},
+  };
+  
   late AnimationController _waveController;
   late AnimationController _pulseController;
   late AnimationController _glowController;
@@ -461,7 +491,7 @@ class _InverseModeScreenState extends State<InverseModeScreen> with TickerProvid
                             Container(
                               padding: const EdgeInsets.symmetric(vertical: 8),
                               child: Text(
-                                letter,
+                                _letterToGesture[letter]?[_selectedLanguage] ?? letter,
                                 style: TextStyle(
                                   color: isActive ? Color(0xFF06b6d4) : Colors.white,
                                   fontSize: 20,
