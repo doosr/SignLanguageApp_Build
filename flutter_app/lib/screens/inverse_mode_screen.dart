@@ -65,10 +65,7 @@ class _InverseModeScreenState extends State<InverseModeScreen> with TickerProvid
 
   void _toggleListening() async {
     if (_isListening) {
-      await _speech.stop();
-      setState(() => _isListening = false);
-      _waveController.stop();
-      _startGestureAnimation();
+      _stopListening();
     } else {
       bool available = await _speech.initialize();
       if (available) {
@@ -81,8 +78,68 @@ class _InverseModeScreenState extends State<InverseModeScreen> with TickerProvid
               _recognizedText = result.recognizedWords.toUpperCase();
             });
           },
+          listenMode: stt.ListenMode.confirmation, // Continuous listening
+          pauseFor: const Duration(seconds: 3), // Pause detection
+          onSoundLevelChange: (level) {
+            // Optional: could show sound level
+          },
         );
       }
+    }
+  }
+  
+  void _stopListening() async {
+    if (_isListening) {
+      await _speech.stop();
+      setState(() => _isListening = false);
+      _waveController.stop();
+      
+      // Start animation if text exists
+      if (_recognizedText.isNotEmpty) {
+        _startGestureAnimation();
+      }
+    }
+  }
+  
+  void _resetRecognition() {
+    setState(() {
+      _recognizedText = '';
+      _currentLetterIndex = 0;
+    });
+    _animationTimer?.cancel();
+    
+    // Keep listening if was listening
+    if (_isListening) {
+      // Restart listening for new phrase
+      _speech.stop();
+      Future.delayed(const Duration(milliseconds: 300), () {
+        if (mounted && _isListening) {
+          _speech.listen(
+            localeId: _languageCodes[_selectedLanguage],
+            onResult: (result) {
+              setState(() {
+                _recognizedText = result.recognizedWords.toUpperCase();
+              });
+            },
+            listenMode: stt.ListenMode.confirmation,
+            pauseFor: const Duration(seconds: 3),
+          );
+        }
+      });
+    }
+  }
+  
+  void _startNewPhrase() {
+    // Reset text but keep listening
+    setState(() {
+      _recognizedText = '';
+      _currentLetterIndex = 0;
+    });
+    _animationTimer?.cancel();
+    
+    // Start listening if not already
+    if (!_isListening) {
+      _toggleListening();
     }
   }
 
@@ -470,8 +527,86 @@ class _InverseModeScreenState extends State<InverseModeScreen> with TickerProvid
                   ),
                 ),
               ),
+            
+            // Control Buttons
+            if (_recognizedText.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    // Stop Button (only if listening)
+                    if (_isListening)
+                      _buildControlButton(
+                        icon: Icons.stop,
+                        label: 'Stop',
+                        color: Colors.red,
+                        onTap: _stopListening,
+                      ),
+                    
+                    // Reset Button
+                    _buildControlButton(
+                      icon: Icons.refresh,
+                      label: 'Réinitialiser',
+                      color: const Color(0xFF06b6d4),
+                      onTap: _resetRecognition,
+                    ),
+                    
+                    // New Phrase Button (only if not listening)
+                    if (!_isListening)
+                      _buildControlButton(
+                        icon: Icons.mic,
+                        label: 'Nouvelle phrase',
+                        color: const Color(0xFF8b5cf6),
+                        onTap: _startNewPhrase,
+                      ),
+                  ],
+                ),
+              ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+  
+  Widget _buildControlButton({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              color.withOpacity(0.3),
+              color.withOpacity(0.2),
+            ],
+          ),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: color.withOpacity(0.5),
+            width: 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: color, size: 20),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
         ),
       ),
     );
