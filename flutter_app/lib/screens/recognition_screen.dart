@@ -1,4 +1,5 @@
 import 'dart:ui';
+import 'package:flutter_mjpeg/flutter_mjpeg.dart';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter_tts/flutter_tts.dart';
@@ -139,11 +140,16 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       final prefs = await SharedPreferences.getInstance();
       _selectedLanguage = prefs.getString('language') ?? 'Français';
       
-      // Check ESP32 camera availability with FRESH test
+      // Check ESP32 camera availability
       await _esp32Service.initialize(); 
       if (_esp32Service.isEnabled.value) {
-         // Force check
-         await _esp32Service.testConnection();
+         // Only test if connection is stale (>30s) or not connected
+         if (_esp32Service.shouldReconnect() || !_esp32Service.isConnected.value) {
+            print("Testing ESP32 connection (Stale or Disconnected)...");
+            await _esp32Service.testConnection();
+         } else {
+            print("⚡ Using fresh ESP32 connection (Skipping test)");
+         }
       }
       
       _useESP32Camera = _esp32Service.isEnabled.value && _esp32Service.isConnected.value;
@@ -1202,32 +1208,11 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
     }
 
     // Use a unique key to force refresh if stream stalls
-    return Image.network(
-      streamUrl,
-      key: ValueKey("esp32_stream_${DateTime.now().minute}"), // Refresh every minute or on rebuild
-      headers: const {"Connection": "keep-alive"},
-      gaplessPlayback: true,
-      fit: BoxFit.cover,
-      loadingBuilder: (context, child, loadingProgress) {
-        if (loadingProgress == null) return child;
-        return Container(
-          color: Colors.black,
-          child: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const CircularProgressIndicator(color: AppTheme.accentCyan),
-                const SizedBox(height: 10),
-                Text("Connexion au flux...", style: TextStyle(color: Colors.white.withOpacity(0.7))),
-              ],
-            ),
-          ),
-        );
-      },
-      errorBuilder: (context, error, stackTrace) {
-        // Retry logic could go here, but for now fallback
+    // Use Mjpeg widget for robust stream handling
+    return Mjpeg(
+      isLive: true,
+      error: (context, error, stack) {
         print("Stream error: $error");
-        
         return Container(
           color: Colors.black,
           child: Center(
@@ -1242,7 +1227,6 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
                 ),
                 TextButton(
                   onPressed: () {
-                    // Force rebuild/retry
                     setState(() {});
                   },
                   child: const Text("Réessayer", style: TextStyle(color: AppTheme.accentCyan)),
@@ -1252,6 +1236,8 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
           ),
         );
       },
+      stream: streamUrl,
+      fit: BoxFit.cover,
     );
   }
 }
