@@ -3,7 +3,9 @@ import 'package:flutter/services.dart';
 import 'dart:async';
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:camera/camera.dart';
+import 'package:permission_handler/permission_handler.dart'; // Permissions
 import '../main.dart'; // To access global 'cameras' variable
 import '../services/esp32_camera_service.dart';
 import '../theme/app_theme.dart';
@@ -77,6 +79,17 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
       try {
         print("Starting initialization...");
         
+        // Request Permissions Explicitly (Windows/Android/iOS)
+        Map<Permission, PermissionStatus> statuses = await [
+          Permission.camera,
+          Permission.microphone,
+        ].request();
+        
+        if (statuses[Permission.camera] != PermissionStatus.granted) {
+          print("⚠️ Camera permission not granted: ${statuses[Permission.camera]}");
+          // On Windows, if denied, we might need to instruct user to check Settings
+        }
+        
         // Init ESP32
         final esp32Service = ESP32CameraService();
         await esp32Service.initialize();
@@ -84,9 +97,6 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
         
         // Init Cameras
         try {
-          // Import this globally in main.dart or use a service locator
-          // For now, we assume 'cameras' is available globally from main.dart
-          // Note: Variable 'cameras' needs to be imported from main.dart
           cameras = await availableCameras();
           print("Cameras initialized: ${cameras.length} found");
         } catch (e) {
