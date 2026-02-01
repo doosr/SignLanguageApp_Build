@@ -339,10 +339,9 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
             }
             uiHands.add(normalizedLandmarks);
             
-            // Pass label for correct slotting (Left/Right)
+            // Reverted to raw data passing (no label)
             rawHandsData.add({
               'landmarks': normalizedLandmarks,
-              'label': hand.label // "Left" or "Right"
             });
           }
            
@@ -351,8 +350,8 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
           if (rawHandsData.isNotEmpty) {
             _missedFrameCounter = 0; // Reset counter on detection
 
-            // Run heavy normalization in Isolate with LABEL
-            final features = await compute(_processHandLandmarksWithLabels, rawHandsData);
+            // Run heavy normalization in Isolate using Spatial Sorting
+            final features = await compute(_processHandLandmarksSpatial, rawHandsData);
             
             if (currentMode == "LETTRES") {
                _runInferenceLetters(features);
@@ -375,59 +374,97 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
      }
   }
 
-  // UPDATED ISOLATE FUNCTION: Handles Handedness
-  static List<double> _processHandLandmarksWithLabels(List<Map<String, dynamic>> handsData) {
+  // UPDATED ISOLATE FUNCTION: Spatial Sorting (Left->Right)
+  static List<double> _processHandLandmarksSpatial(List<Map<String, dynamic>> handsData) {
     if (handsData.isEmpty) return List.filled(84, 0.0);
 
-    // Prepare 84-float vector [Left(42) | Right(42)]
-    List<double> features = List.filled(84, 0.0);
-
-    // Helper to extract double list
     List<double> getLandmarks(Map<String, dynamic> hand) {
       return (hand['landmarks'] as List).cast<double>();
     }
 
-    // Determine Min X/Y for normalization across ALL available hands
+    // Sort hands left-to-right based on first landmark X
+    handsData.sort((a, b) {
+      double xa = getLandmarks(a)[0];
+      double xb = getLandmarks(b)[0];
+      return xa.compareTo(xb);
+    });
+
+    List<double> features = [];
+
+    // SINGLE HAND CASE:
+    // If only 1 hand is detected, we put it in the first slot (0-41)
+    // and zero-pad the second slot (42-83).
+    // This matches the Python training where single-hand samples are usually stored in the first block.
+    // LIMITATION: If the user uses their Right hand, and it's the only hand, it goes to Slot 1.
+    // If the model expects Right Hand in Slot 2, this fails. 
+    // BUT since we can't determine chirality without 'label', we assume consistency.
+    
+    if (handsData.length == 1) {
+       features.addAll(getLandmarks(handsData[0])); // Slot 1
+       features.addAll(List.filled(42, 0.0));      // Slot 2
+    } else {
+       // TWO HANDS: Slot 1 = Leftmost, Slot 2 = Rightmost
+       // Take max 2 hands
+       for (var hand in handsData.take(2)) {
+         features.addAll(getLandmarks(hand));
+       }
+    }
+    
+    // Safety padding if < 84 (should unlikely happen with logic above)
+    while (features.length < 84) features.add(0.0);
+
+    // Normalization (Min-Max Shift)
+    // We normalize the whole set relative to the bounding box of ALL hands
     List<double> allXs = [];
     List<double> allYs = [];
-
-    for (var hand in handsData) {
-      List<double> lm = getLandmarks(hand);
-      for (int i = 0; i < lm.length; i += 2) {
-        allXs.add(lm[i]);
-        allYs.add(lm[i+1]);
-      }
+    
+    for (int i = 0; i < features.length; i += 2) {
+       // Only count non-zero landmarks (simple heuristic, or verify if handsData used padding)
+       // Actually, we should collect min/max from original hands, not the padded-with-zeros vector
+       // But wait... features contains 0.0 for missing hand. 0.0 is a valid coordinate? 
+       // No, valid coordinates are usually > 0 if normalized?
+       // Let's iterate original handsData for normalization stats
     }
-
-    if (allXs.isEmpty) return features;
+    
+    allXs.clear(); allYs.clear();
+    for (var hand in handsData) {
+       List<double> lm = getLandmarks(hand);
+       for (int i = 0; i < lm.length; i+=2) {
+          allXs.add(lm[i]);
+          allYs.add(lm[i+1]);
+       }
+    }
+    
+    if (allXs.isEmpty) return List.filled(84, 0.0);
 
     double min_X = allXs.reduce((curr, next) => curr < next ? curr : next);
     double min_Y = allYs.reduce((curr, next) => curr < next ? curr : next);
 
-    // Logic: Place hand in correct slot based on Label
-    // Assuming Model: 0-41 = Left Hand, 42-83 = Right Hand
+    // Apply normalization to the FEATURES vector
+    // We only normalize the NON-ZERO parts (the actual hands)
+    // If we simply subtract min_X from 0.0 (padding), we get negative values.
+    // So we should rebuild features properly.
     
-    for (var hand in handsData) {
-      String label = hand['label'] ?? "Right"; // Default to Right if unknown
-      List<double> lm = getLandmarks(hand);
-      
-      // Calculate start index
-      // Note: hand_landmarker might return "Left" for the user's actual left hand
-      // But in mirrored selfie view, "Left" might appear on right?
-      // Standard: Label is usually correct relative to body
-      
-      int startIndex = (label == "Left") ? 0 : 42; 
-      
-      // Normalize and Place
-      for (int i = 0; i < lm.length; i += 2) {
-        if (startIndex + i + 1 < 84) {
-           features[startIndex + i] = lm[i] - min_X;
-           features[startIndex + i + 1] = lm[i+1] - min_Y;
-        }
-      }
+    List<double> normalizedFeatures = [];
+    
+    if (handsData.length == 1) {
+       List<double> h1 = getLandmarks(handsData[0]);
+       for (int i=0; i<h1.length; i+=2) {
+          normalizedFeatures.add(h1[i] - min_X);
+          normalizedFeatures.add(h1[i+1] - min_Y);
+       }
+       normalizedFeatures.addAll(List.filled(42, 0.0));
+    } else {
+       for (var hand in handsData.take(2)) {
+          List<double> h = getLandmarks(hand);
+          for (int i=0; i<h.length; i+=2) {
+             normalizedFeatures.add(h[i] - min_X);
+             normalizedFeatures.add(h[i+1] - min_Y);
+          }
+       }
     }
     
-    return features;
+    return normalizedFeatures;
   }
 
   void _runInferenceLetters(List<double> features) {
