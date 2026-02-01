@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter/foundation.dart'; // For compute
 import 'dart:async';
 import 'package:tflite_flutter/tflite_flutter.dart';
 import 'package:hand_landmarker/hand_landmarker.dart';
@@ -251,75 +252,8 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
     }
   }
 
-  void _processCameraImage(CameraImage image) async {
-    if (_isDetecting || _plugin == null) return;
-    
-    _frameCounter++;
-    if (_frameCounter % 8 != 0) return; // Reduced for better detection
-    
-    _isDetecting = true;
-    
-    try {
-       final hands = _plugin!.detect(image, _controller!.description.sensorOrientation);
-       
-       if (mounted) {
-          _sensorRotation = _controller!.description.sensorOrientation;
-          bool isFrontCamera = _controller!.description.lensDirection == CameraLensDirection.front;
-
-          List<List<double>> convertedHands = [];
-          
-          for (var hand in hands) {
-            List<double> normalizedLandmarks = [];
-            for (var landmark in hand.landmarks) {
-               double px = landmark.x;
-               double py = landmark.y;
-               
-               double finalX = px;
-               double finalY = py;
-               
-               if (_sensorRotation == 90) {
-                 finalX = 1.0 - py;
-                 finalY = px;
-               } else if (_sensorRotation == 270) {
-                 finalX = py;
-                 finalY = 1.0 - px;
-               } else if (_sensorRotation == 180) {
-                 finalX = 1.0 - px;
-                 finalY = 1.0 - py;
-               }
-
-               if (isFrontCamera) {
-                 finalX = 1.0 - finalX;
-               }
-               
-               normalizedLandmarks.add(finalX);
-               normalizedLandmarks.add(finalY);
-            }
-            convertedHands.add(normalizedLandmarks);
-          }
-           
-          _handsNotifier.value = convertedHands;
-
-          if (convertedHands.isNotEmpty) {
-            final features = _processHandLandmarksForClassifier(convertedHands);
-            if (currentMode == "LETTRES") {
-               _runInferenceLetters(features);
-            } else {
-               _runInferenceWords(features);
-            }
-          } else {
-            _detectedTextNotifier.value = "En attente...";
-            _sequenceBuffer.clear();
-          }
-        }
-     } catch (e) {
-       print("Vision error: $e");
-     } finally { 
-       _isDetecting = false;
-     }
-  }
-
-  List<double> _processHandLandmarksForClassifier(List<List<double>> hands) {
+  // Move this to top level or static for compute
+  static List<double> _processHandLandmarksInIsolate(List<List<double>> hands) {
     if (hands.isEmpty) return List.filled(84, 0.0);
 
     // Sort hands left to right (based on x-coordinate of first landmark)
@@ -340,24 +274,8 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
         rawAll.addAll(h);
       }
     }
-    
-    // Normalize coordinates relative to minimum point
-    double minX = 1.0, minY = 1.0; 
-    for (int i = 0; i < rawAll.length; i++) {
-        // Skip zero-padding values for min calculation if they are exactly 0.0 CHECK THIS
-        // Actually Python script calculates min from 'x_' and 'y_' lists which come from landmarks.
-        // It does NOT include the padded zeros in the min calculation.
-        // But here 'rawAll' has zeros. 
-        // We must calculate minX/minY ONLY from actual landmarks (first 42 values if single hand)
-    }
 
-    // RE-IMPLEMENTATION TO MATCH PYTHON LOGIC EXACTLY:
-    // Python:
-    // 1. Collect all x, y from all landmarks
-    // 2. Calculate min_x, min_y
-    // 3. Subtract min_x, min_y from all landmarks
-    // 4. Pad with 0.0 if necessary
-    
+    // Normalization Logic matching Python
     List<double> allXs = [];
     List<double> allYs = [];
     
@@ -391,6 +309,88 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
     }
     
     return processed;
+  }
+
+  void _processCameraImage(CameraImage image) async {
+    if (_isDetecting || _plugin == null) return;
+    
+    _frameCounter++;
+    // OPTIMIZATION: Process every 4th frame (instead of 8) for smoother UI
+    // 8 frames @ 30fps = ~266ms latency (feel laggy)
+    // 4 frames @ 30fps = ~133ms latency (smoother)
+    if (_frameCounter % 4 != 0) return; 
+    
+    _isDetecting = true;
+    
+    try {
+       final hands = _plugin!.detect(image, _controller!.description.sensorOrientation);
+       
+       if (mounted) {
+          _sensorRotation = _controller!.description.sensorOrientation;
+          bool isFrontCamera = _controller!.description.lensDirection == CameraLensDirection.front;
+
+          List<List<double>> convertedHands = [];
+          
+          // OPTIMIZATION: Pre-calculate rotation factors outside loop
+          bool rotate90 = _sensorRotation == 90;
+          bool rotate270 = _sensorRotation == 270;
+          bool rotate180 = _sensorRotation == 180;
+          
+          for (var hand in hands) {
+            List<double> normalizedLandmarks = [];
+            for (var landmark in hand.landmarks) {
+               // Access properties once
+               double px = landmark.x;
+               double py = landmark.y;
+               
+               double finalX = px;
+               double finalY = py;
+               
+               // Optimized rotation logic
+               if (rotate90) {
+                 finalX = 1.0 - py;
+                 finalY = px;
+               } else if (rotate270) {
+                 finalX = py;
+                 finalY = 1.0 - px;
+               } else if (rotate180) {
+                 finalX = 1.0 - px;
+                 finalY = 1.0 - py;
+               }
+
+               if (isFrontCamera) {
+                 finalX = 1.0 - finalX;
+               }
+               
+               normalizedLandmarks.add(finalX);
+               normalizedLandmarks.add(finalY);
+            }
+            convertedHands.add(normalizedLandmarks);
+          }
+           
+          _handsNotifier.value = convertedHands;
+
+          if (convertedHands.isNotEmpty) {
+            // OPTIMIZATION: Run heavy normalization in separate Isolate
+            if (convertedHands.length > 0) { // Simple check
+                final features = await compute(_processHandLandmarksInIsolate, convertedHands);
+                
+                if (currentMode == "LETTRES") {
+                   _runInferenceLetters(features);
+                } else {
+                   _runInferenceWords(features);
+                }
+            }
+          } else {
+            _detectedTextNotifier.value = "En attente...";
+            _sequenceBuffer.clear();
+          }
+        }
+     } catch (e) {
+       print("Vision error: $e");
+     } finally { 
+       _isDetecting = false;
+     }
   }
 
   void _runInferenceLetters(List<double> features) {
