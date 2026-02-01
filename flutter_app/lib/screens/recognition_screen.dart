@@ -141,19 +141,17 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       final prefs = await SharedPreferences.getInstance();
       _selectedLanguage = prefs.getString('language') ?? 'Français';
       
-      // Check ESP32 camera availability
-      await _esp32Service.initialize(); 
+      // FORCE ESP32 if enabled (User preference overrides connectivity check)
+      // MjpegWidget in _buildESP32Stream will handle loading/reconnecting UI
       if (_esp32Service.isEnabled.value) {
-         // Only test if connection is stale (>30s) or not connected
-         if (_esp32Service.shouldReconnect() || !_esp32Service.isConnected.value) {
-            print("Testing ESP32 connection (Stale or Disconnected)...");
-            await _esp32Service.testConnection();
-         } else {
-            print("⚡ Using fresh ESP32 connection (Skipping test)");
-         }
+          // Trigger a background test but don't wait for it to decide UI
+          _esp32Service.testConnection(); 
+          _useESP32Camera = true;
+          print("⚡ Priority to ESP32-CAM (Enabled in settings)");
+      } else {
+          _useESP32Camera = false;
       }
-      
-      _useESP32Camera = _esp32Service.isEnabled.value && _esp32Service.isConnected.value;
+      // Old logic removed: _useESP32Camera = _esp32Service.isEnabled.value && _esp32Service.isConnected.value;
       
       // Request permissions
       _requestPermissions();
