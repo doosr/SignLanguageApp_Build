@@ -322,7 +322,7 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
   List<double> _processHandLandmarksForClassifier(List<List<double>> hands) {
     if (hands.isEmpty) return List.filled(84, 0.0);
 
-    // Sort hands left to right
+    // Sort hands left to right (based on x-coordinate of first landmark)
     List<List<double>> sorted = List.from(hands);
     sorted.sort((a, b) => a[0].compareTo(b[0]));
     
@@ -330,9 +330,10 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
     
     // Handle single hand vs two hands
     if (sorted.length == 1) {
-      // Single hand: duplicate it for consistency with 2-hand model
+      // Single hand: MATCH PYTHON SCRIPT -> Fill with zeros, DO NOT duplicate
       rawAll.addAll(sorted[0]);
-      rawAll.addAll(sorted[0]);
+      // Python script extends with 42 zeros for the second hand
+      rawAll.addAll(List.filled(42, 0.0));
     } else {
       // Two hands: use both (take max 2)
       for (var h in sorted.take(2)) {
@@ -342,20 +343,54 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
     
     // Normalize coordinates relative to minimum point
     double minX = 1.0, minY = 1.0; 
-    for (int i = 0; i < rawAll.length; i += 2) {
-      if (rawAll[i] < minX) minX = rawAll[i];
-      if (rawAll[i + 1] < minY) minY = rawAll[i + 1];
+    for (int i = 0; i < rawAll.length; i++) {
+        // Skip zero-padding values for min calculation if they are exactly 0.0 CHECK THIS
+        // Actually Python script calculates min from 'x_' and 'y_' lists which come from landmarks.
+        // It does NOT include the padded zeros in the min calculation.
+        // But here 'rawAll' has zeros. 
+        // We must calculate minX/minY ONLY from actual landmarks (first 42 values if single hand)
     }
 
-    List<double> processed = [];
-    for (int i = 0; i < rawAll.length; i += 2) {
-      processed.add(rawAll[i] - minX);
-      processed.add(rawAll[i + 1] - minY);
+    // RE-IMPLEMENTATION TO MATCH PYTHON LOGIC EXACTLY:
+    // Python:
+    // 1. Collect all x, y from all landmarks
+    // 2. Calculate min_x, min_y
+    // 3. Subtract min_x, min_y from all landmarks
+    // 4. Pad with 0.0 if necessary
+    
+    List<double> allXs = [];
+    List<double> allYs = [];
+    
+    // Collect stats from actual hands (not padded yet)
+    // Note: sorted contains only actual hands
+    for (var hand in sorted) {
+      for (int i = 0; i < hand.length; i += 2) {
+        allXs.add(hand[i]);
+        allYs.add(hand[i+1]);
+      }
     }
     
-    // Ensure exactly 84 features
-    while (processed.length < 84) processed.add(0.0);
-    return processed.sublist(0, 84);
+    if (allXs.isEmpty) return List.filled(84, 0.0);
+    
+    double min_X = allXs.reduce((curr, next) => curr < next ? curr : next);
+    double min_Y = allYs.reduce((curr, next) => curr < next ? curr : next);
+
+    List<double> processed = [];
+    
+    // Normalize actual landmarks
+    for (var hand in sorted) {
+      for (int i = 0; i < hand.length; i += 2) {
+        processed.add(hand[i] - min_X);
+        processed.add(hand[i+1] - min_Y);
+      }
+    }
+    
+    // Pad with zeros to reach 84 features
+    while (processed.length < 84) {
+      processed.add(0.0);
+    }
+    
+    return processed;
   }
 
   void _runInferenceLetters(List<double> features) {
@@ -380,14 +415,15 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       }
     }
 
-    if (maxProb > 0.82) { // Increased threshold to reduce false positives
+    // MATCH PYTHON: 0.4 threshold (using 0.5 for slightly safer margin)
+    if (maxProb > 0.5) { 
       String label = _labelsLetters[maxIdx];
       
       _letterBuffer.add(label);
       if (_letterBuffer.length > 5) _letterBuffer.removeAt(0);
 
       int count = _letterBuffer.where((e) => e == label).length;
-      if (count >= 4 && detectedText != label) { // Increased from 3 to 4 for accuracy
+      if (count >= 3 && detectedText != label) { // 3/5 consistency
         _onGestureDetected(label);
       }
     } else if (maxProb < 0.2) {
@@ -404,6 +440,7 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
 
     // Need full sequence for word detection
     if (_sequenceBuffer.length == _sequenceLength) {
+      // Flatten: [ [84], [84]... ] -> [ 84*15 ]
       var flattenedSequence = _sequenceBuffer.expand((f) => f).toList();
       var input = [flattenedSequence];
       var output = List.filled(1, List.filled(_labelsWords.length, 0.0));
@@ -417,25 +454,29 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
           maxIdx = i;
         }
       }
+      
+      // LOG PROBS for Debugging
+      // print("Word Prob: $maxProb for ${_labelsWords[maxIdx]}");
 
-      // Adjusted threshold for better word detection
-      if (maxProb > 0.55) {
-        String label = _labelsWords[maxIdx];
-        
-        _wordCandidateHistory.add(label);
-        if (_wordCandidateHistory.length > 8) _wordCandidateHistory.removeAt(0);
-        
-        int freq = _wordCandidateHistory.where((e) => e == label).length;
-        
-        // Require 3 out of 8 for stability
-        if (freq >= 3 && detectedText != label) {
-           _onGestureDetected(label);
-           _wordCandidateHistory.clear();
-           _sequenceBuffer.clear();
-        }
-      } else if (maxProb < 0.25) {
-        // Clear if confidence very low
-        _wordCandidateHistory.clear();
+      // MATCH PYTHON: "Candidate History" & Voting
+      // Python: History 10, Freq >= 5, Prob > 0.15
+      
+      String label = _labelsWords[maxIdx];
+      
+      _wordCandidateHistory.add(label);
+      if (_wordCandidateHistory.length > 10) _wordCandidateHistory.removeAt(0);
+      
+      int freq = _wordCandidateHistory.where((e) => e == label).length;
+      
+      // Threshold: 0.15 (Python) -> Using 0.3 for safety
+      if (maxProb > 0.3 && freq >= 5) {
+         // Anti-spam handled in _onGestureDetected with timeout
+         _onGestureDetected(label);
+         
+         // Don't clear immediately, let it flow? 
+         // Python: self.candidate_history = [] # Reset après validation
+         _wordCandidateHistory.clear();
+         _sequenceBuffer.clear();
       }
     }
   }
