@@ -60,18 +60,33 @@ class _ESP32ConfigScreenState extends State<ESP32ConfigScreen> {
         // Notify ESP32CameraService
         final esp32Service = ESP32CameraService();
         await esp32Service.setIpAddress(_ipController.text);
-        if (_cameraEnabled) {
+        
+        // Force Enable if successful
+        if (!_cameraEnabled) {
+          setState(() { _cameraEnabled = true; });
           await esp32Service.setEnabled(true);
+          await prefs.setBool('esp32_camera_enabled', true);
+        } else {
+           await esp32Service.setEnabled(true);
         }
         
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('✓ Connexion réussie et sauvegardée'),
+              content: Text('✓ Connexion réussie ! Redirection...'),
               backgroundColor: Color(0xFF4ade80),
-              duration: Duration(seconds: 2),
+              duration: Duration(seconds: 1),
             ),
           );
+          
+          // Auto-Navigate to Recognition Screen after short delay
+          Future.delayed(const Duration(seconds: 1), () {
+             if (mounted) {
+               // Use pushReplacement to replace config screen, or pushNamedAndRemoveUntil to reset queue
+               // Assuming '/recognition' route exists or using direct MaterialPageRoute
+               Navigator.of(context).pushNamed('/recognition');
+             }
+          });
         }
       }
     } catch (e) {
