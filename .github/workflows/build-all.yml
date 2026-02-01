@@ -94,11 +94,11 @@ jobs:
           name: Windows-Portable
           path: flutter_app/build/windows/x64/runner/Release/SignLanguageApp-Windows-Portable-v${{ github.run_number }}.zip
           retention-days: 30
-
+  
   create-release:
-    name: 🎉 Create Release
-    needs: [build-android, build-windows]
+    name: 📦 Create GitHub Release
     runs-on: ubuntu-latest
+    needs: [build-android, build-windows]
     if: startsWith(github.ref, 'refs/tags/')
     
     steps:
@@ -108,27 +108,19 @@ jobs:
           name: Android-APK
           path: ./artifacts
       
-      - name: 📥 Download Windows EXE
+      - name: 📥 Download Windows ZIP
         uses: actions/download-artifact@v4
         with:
-          name: Windows-EXE
+          name: Windows-Portable
           path: ./artifacts
       
-      - name: 🚀 Create GitHub Release
+      - name: 📦 Create Release
         uses: softprops/action-gh-release@v1
         with:
-          files: ./artifacts/*
+          files: |
+            ./artifacts/*.apk
+            ./artifacts/*.zip
           body: |
-            ## 📱 Sign Language App - Release ${{ github.ref_name }}
-            
-            ### 📦 Downloads
-            - **Android APK**: For Android devices (5.0+)
-            - **Windows EXE**: For Windows 10/11 (extract ZIP and run flutter_app.exe)
-            
-            ### ✨ Features
-            - 🤟 Real-time sign language recognition
-            - 📡 ESP32-CAM support with automatic fallback
-            - 🚀 Optimized performance (60% faster loading)
             - 🌍 Multi-language support (French, English, Arabic)
             - 🎯 Letter and word detection modes
             
