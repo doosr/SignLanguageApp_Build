@@ -539,8 +539,8 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       int maxIdx = 0;
       double maxProb = -1.0;
       
-      // DEBUG PRINT
-      // print("🧠 LSTM Probabilities: ${output[0]}"); 
+      // DEBUG PRINT ENABLED:
+      print("🧠 LSTM Output: ${output[0]}"); 
 
       for (int i = 0; i < output[0].length; i++) {
         if (output[0][i] > maxProb) {
@@ -549,13 +549,12 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
         }
       }
       
+      print("🔎 Top Candidate: ${_labelsWords[maxIdx]} ($maxProb)");
+
       // LSTM is very confident (Softmax).
       // We use a high threshold to ensure "Very Precise" detection as requested.
       // Python logic matches: High prob + repetition
       
-      String label = _labelsWords[maxIdx];
-      
-      _wordCandidateHistory.add(label);
       if (_wordCandidateHistory.length > 10) _wordCandidateHistory.removeAt(0);
       
       int freq = _wordCandidateHistory.where((e) => e == label).length;
