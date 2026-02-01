@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 
 class BlinkingDot extends StatefulWidget {
   final Color color;
