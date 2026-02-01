@@ -281,70 +281,15 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
   }
 
   // Move this to top level or static for compute
-  static List<double> _processHandLandmarksInIsolate(List<List<double>> hands) {
-    if (hands.isEmpty) return List.filled(84, 0.0);
 
-    // Sort hands left to right (based on x-coordinate of first landmark)
-    List<List<double>> sorted = List.from(hands);
-    sorted.sort((a, b) => a[0].compareTo(b[0]));
-    
-    List<double> rawAll = [];
-    
-    // Handle single hand vs two hands
-    if (sorted.length == 1) {
-      // Single hand: MATCH PYTHON SCRIPT -> Fill with zeros, DO NOT duplicate
-      rawAll.addAll(sorted[0]);
-      // Python script extends with 42 zeros for the second hand
-      rawAll.addAll(List.filled(42, 0.0));
-    } else {
-      // Two hands: use both (take max 2)
-      for (var h in sorted.take(2)) {
-        rawAll.addAll(h);
-      }
-    }
 
-    // Normalization Logic matching Python
-    List<double> allXs = [];
-    List<double> allYs = [];
-    
-    // Collect stats from actual hands (not padded yet)
-    // Note: sorted contains only actual hands
-    for (var hand in sorted) {
-      for (int i = 0; i < hand.length; i += 2) {
-        allXs.add(hand[i]);
-        allYs.add(hand[i+1]);
-      }
-    }
-    
-    if (allXs.isEmpty) return List.filled(84, 0.0);
-    
-    double min_X = allXs.reduce((curr, next) => curr < next ? curr : next);
-    double min_Y = allYs.reduce((curr, next) => curr < next ? curr : next);
-
-    List<double> processed = [];
-    
-    // Normalize actual landmarks
-    for (var hand in sorted) {
-      for (int i = 0; i < hand.length; i += 2) {
-        processed.add(hand[i] - min_X);
-        processed.add(hand[i+1] - min_Y);
-      }
-    }
-    
-    // Pad with zeros to reach 84 features
-    while (processed.length < 84) {
-      processed.add(0.0);
-    }
-    
-    return processed;
-  }
+  int _missedFrameCounter = 0; // Persistence for word buffer
 
   void _processCameraImage(CameraImage image) async {
     if (_isDetecting || _plugin == null) return;
     
     _frameCounter++;
     // OPTIMIZATION: Process every 2nd frame for faster tracking
-    // 2 frames @ 30fps = ~66ms latency (very responsive)
     if (_frameCounter % 2 != 0) return; 
     
     _isDetecting = true;
@@ -356,9 +301,11 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
           _sensorRotation = _controller!.description.sensorOrientation;
           bool isFrontCamera = _controller!.description.lensDirection == CameraLensDirection.front;
 
-          List<List<double>> convertedHands = [];
+          List<Map<String, dynamic>> rawHandsData = [];
           
-          // OPTIMIZATION: Pre-calculate rotation factors outside loop
+          List<List<double>> uiHands = []; // For drawing
+
+          // OPTIMIZATION: Rotation flags
           bool rotate90 = _sensorRotation == 90;
           bool rotate270 = _sensorRotation == 270;
           bool rotate180 = _sensorRotation == 180;
@@ -366,14 +313,12 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
           for (var hand in hands) {
             List<double> normalizedLandmarks = [];
             for (var landmark in hand.landmarks) {
-               // Access properties once
                double px = landmark.x;
                double py = landmark.y;
                
                double finalX = px;
                double finalY = py;
                
-               // Optimized rotation logic
                if (rotate90) {
                  finalX = 1.0 - py;
                  finalY = px;
@@ -392,25 +337,35 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
                normalizedLandmarks.add(finalX);
                normalizedLandmarks.add(finalY);
             }
-            convertedHands.add(normalizedLandmarks);
+            uiHands.add(normalizedLandmarks);
+            
+            // Pass label for correct slotting (Left/Right)
+            rawHandsData.add({
+              'landmarks': normalizedLandmarks,
+              'label': hand.label // "Left" or "Right"
+            });
           }
            
-          _handsNotifier.value = convertedHands;
+          _handsNotifier.value = uiHands;
 
-          if (convertedHands.isNotEmpty) {
-            // OPTIMIZATION: Run heavy normalization in separate Isolate
-            if (convertedHands.length > 0) { // Simple check
-                final features = await compute(_processHandLandmarksInIsolate, convertedHands);
-                
-                if (currentMode == "LETTRES") {
-                   _runInferenceLetters(features);
-                } else {
-                   _runInferenceWords(features);
-                }
+          if (rawHandsData.isNotEmpty) {
+            _missedFrameCounter = 0; // Reset counter on detection
+
+            // Run heavy normalization in Isolate with LABEL
+            final features = await compute(_processHandLandmarksWithLabels, rawHandsData);
+            
+            if (currentMode == "LETTRES") {
+               _runInferenceLetters(features);
+            } else {
+               _runInferenceWords(features);
             }
           } else {
-            _detectedTextNotifier.value = "En attente...";
-            _sequenceBuffer.clear();
+            // "Grace Period" logic: Don't clear immediately
+            _missedFrameCounter++;
+            if (_missedFrameCounter > 5) { // ~300ms grace period
+               _detectedTextNotifier.value = "En attente...";
+               _sequenceBuffer.clear();
+            }
           }
         }
      } catch (e) {
@@ -418,6 +373,61 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
      } finally { 
        _isDetecting = false;
      }
+  }
+
+  // UPDATED ISOLATE FUNCTION: Handles Handedness
+  static List<double> _processHandLandmarksWithLabels(List<Map<String, dynamic>> handsData) {
+    if (handsData.isEmpty) return List.filled(84, 0.0);
+
+    // Prepare 84-float vector [Left(42) | Right(42)]
+    List<double> features = List.filled(84, 0.0);
+
+    // Helper to extract double list
+    List<double> getLandmarks(Map<String, dynamic> hand) {
+      return (hand['landmarks'] as List).cast<double>();
+    }
+
+    // Determine Min X/Y for normalization across ALL available hands
+    List<double> allXs = [];
+    List<double> allYs = [];
+
+    for (var hand in handsData) {
+      List<double> lm = getLandmarks(hand);
+      for (int i = 0; i < lm.length; i += 2) {
+        allXs.add(lm[i]);
+        allYs.add(lm[i+1]);
+      }
+    }
+
+    if (allXs.isEmpty) return features;
+
+    double min_X = allXs.reduce((curr, next) => curr < next ? curr : next);
+    double min_Y = allYs.reduce((curr, next) => curr < next ? curr : next);
+
+    // Logic: Place hand in correct slot based on Label
+    // Assuming Model: 0-41 = Left Hand, 42-83 = Right Hand
+    
+    for (var hand in handsData) {
+      String label = hand['label'] ?? "Right"; // Default to Right if unknown
+      List<double> lm = getLandmarks(hand);
+      
+      // Calculate start index
+      // Note: hand_landmarker might return "Left" for the user's actual left hand
+      // But in mirrored selfie view, "Left" might appear on right?
+      // Standard: Label is usually correct relative to body
+      
+      int startIndex = (label == "Left") ? 0 : 42; 
+      
+      // Normalize and Place
+      for (int i = 0; i < lm.length; i += 2) {
+        if (startIndex + i + 1 < 84) {
+           features[startIndex + i] = lm[i] - min_X;
+           features[startIndex + i + 1] = lm[i+1] - min_Y;
+        }
+      }
+    }
+    
+    return features;
   }
 
   void _runInferenceLetters(List<double> features) {
@@ -496,7 +506,8 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       int freq = _wordCandidateHistory.where((e) => e == label).length;
       
       // Threshold: 0.15 (Python) -> Using 0.3 for safety
-      if (maxProb > 0.3 && freq >= 5) {
+      // Threshold: Lowered to 0.25/4 for better responsiveness
+      if (maxProb > 0.25 && freq >= 4) {
          // Anti-spam handled in _onGestureDetected with timeout
          _onGestureDetected(label);
          
