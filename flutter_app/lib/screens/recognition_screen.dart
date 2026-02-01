@@ -177,12 +177,19 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
 
   Future<void> _initPlugin() async {
     try {
+      final modelPath = ModelService().handLandmarkerPath;
+      if (modelPath.isEmpty) {
+        print("❌ HandLandmarker model path not found");
+        return;
+      }
+
       _plugin = HandLandmarkerPlugin.create(
+        modelPath: modelPath, 
         numHands: 2,
-        minHandDetectionConfidence: 0.5, // Lowered for better detection
-        delegate: HandLandmarkerDelegate.gpu, // GPU for performance
+        minHandDetectionConfidence: 0.5, 
+        delegate: HandLandmarkerDelegate.gpu, 
       );
-      print("✅ HandLandmarkerPlugin initialized");
+      print("✅ HandLandmarkerPlugin initialized (Offline Mode)");
     } catch (e) {
       print("Plugin init error: $e");
     }
