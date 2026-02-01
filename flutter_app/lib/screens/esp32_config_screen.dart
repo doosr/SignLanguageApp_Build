@@ -110,6 +110,19 @@ class _ESP32ConfigScreenState extends State<ESP32ConfigScreen> {
     }
   }
 
+  Future<void> _disconnect() async {
+    setState(() {
+      _isConnected = false;
+      _cameraEnabled = false;
+    });
+    
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('esp32_camera_enabled', false);
+    
+    final esp32Service = ESP32CameraService();
+    await esp32Service.setEnabled(false);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(

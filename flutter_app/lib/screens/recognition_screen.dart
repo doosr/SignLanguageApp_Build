@@ -16,6 +16,8 @@ import '../widgets/language_flag_button.dart';
 import '../widgets/hand_painter.dart';
 import '../main.dart';
 import '../services/esp32_camera_service.dart';
+import '../services/model_service.dart';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 
 class RecognitionScreen extends StatefulWidget {
