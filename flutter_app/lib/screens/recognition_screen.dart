@@ -122,27 +122,30 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
   @override
   void initState() {
     super.initState();
-    _initializeFast();
+    _initializeResources();
   }
 
-  Future<void> _initializeFast() async {
-    // Show UI IMMEDIATELY - no waiting
-    if (mounted) {
-      setState(() {
-        _isInitializing = false;
-      });
-    }
-    
-    // Everything else happens in background
+  Future<void> _initializeResources() async {
+    // Show loading screen
+    setState(() {
+      _isInitializing = true;
+    });
+
     try {
       // Load language preference
       final prefs = await SharedPreferences.getInstance();
       _selectedLanguage = prefs.getString('language') ?? 'Français';
       
-      // Check ESP32 camera availability
+      // Check ESP32 camera availability with FRESH test
+      await _esp32Service.initialize(); 
+      if (_esp32Service.isEnabled.value) {
+         // Force check
+         await _esp32Service.testConnection();
+      }
+      
       _useESP32Camera = _esp32Service.isEnabled.value && _esp32Service.isConnected.value;
       
-      // Request permissions (non-blocking)
+      // Request permissions
       _requestPermissions();
       
       // Load everything in parallel
@@ -155,6 +158,12 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       print("✅ All initialization complete");
     } catch (e) {
       print("Initialization error: $e");
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isInitializing = false;
+        });
+      }
     }
   }
 
