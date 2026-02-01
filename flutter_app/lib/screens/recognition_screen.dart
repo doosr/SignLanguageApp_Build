@@ -123,35 +123,36 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
   }
 
   Future<void> _initializeFast() async {
+    // Show UI IMMEDIATELY - no waiting
+    if (mounted) {
+      setState(() {
+        _isInitializing = false;
+      });
+    }
+    
+    // Everything else happens in background
     try {
-      // Load language preference immediately
+      // Load language preference
       final prefs = await SharedPreferences.getInstance();
       _selectedLanguage = prefs.getString('language') ?? 'Français';
       
       // Check ESP32 camera availability
       _useESP32Camera = _esp32Service.isEnabled.value && _esp32Service.isConnected.value;
       
-      // Request permissions first (non-blocking)
+      // Request permissions (non-blocking)
       _requestPermissions();
       
-      // Initialize camera FIRST for faster display
-      await _initCamera();
+      // Load everything in parallel
+      await Future.wait([
+        _initCamera(),
+        _loadModels(),
+        _initPlugin(),
+      ]);
+      
+      print("✅ All initialization complete");
     } catch (e) {
       print("Initialization error: $e");
-    } finally {
-      // ALWAYS show UI even if initialization fails
-      if (mounted) {
-        setState(() {
-          _isInitializing = false;
-        });
-      }
     }
-    
-    // Load models and plugin in background
-    Future.wait([
-      _loadModels(),
-      _initPlugin(),
-    ]);
   }
 
   Future<void> _initPlugin() async {
