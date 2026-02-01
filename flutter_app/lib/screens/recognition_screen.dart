@@ -156,12 +156,11 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       // Request permissions
       _requestPermissions();
       
-      // Load everything in parallel
-      await Future.wait([
-        _initCamera(),
-        _loadModels(),
-        _initPlugin(),
-      ]);
+      // Sequential initialization to prevent race conditions
+      // Plugin requires ModelService to be initialized first
+      await _initCamera(); 
+      await _loadModels(); 
+      await _initPlugin();
       
       print("✅ All initialization complete");
     } catch (e) {
