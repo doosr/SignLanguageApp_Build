@@ -516,11 +516,19 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
 
     // Need full sequence for word detection
     if (_sequenceBuffer.length == _sequenceLength) {
-      // Flatten: [ [84], [84]... ] -> [ 84*15 ]
-      var flattenedSequence = _sequenceBuffer.expand((f) => f).toList();
-      var input = [flattenedSequence];
+      // LSTM INPUT: [Batch, Time, Features] -> [1, 15, 84]
+      // Do NOT flatten. Pass the sequence directly.
+      var input = [_sequenceBuffer]; 
+      
+      // Output: [Batch, NumClasses] -> [1, N] (Probabilities)
       var output = List.filled(1, List.filled(_labelsWords.length, 0.0));
-      _interpreterWords!.run(input, output);
+      
+      try {
+        _interpreterWords!.run(input, output);
+      } catch (e) {
+        print("Inference error: $e");
+        return;
+      }
 
       int maxIdx = 0;
       double maxProb = -1.0;
@@ -531,11 +539,9 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
         }
       }
       
-      // LOG PROBS for Debugging
-      // print("Word Prob: $maxProb for ${_labelsWords[maxIdx]}");
-
-      // MATCH PYTHON: "Candidate History" & Voting
-      // Python: History 10, Freq >= 5, Prob > 0.15
+      // LSTM is very confident (Softmax).
+      // We use a high threshold to ensure "Very Precise" detection as requested.
+      // Python logic matches: High prob + repetition
       
       String label = _labelsWords[maxIdx];
       
@@ -544,14 +550,13 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       
       int freq = _wordCandidateHistory.where((e) => e == label).length;
       
-      // Threshold: 0.15 (Python) -> Using 0.3 for safety
-      // Threshold: Lowered to 0.25/4 for better responsiveness
-      if (maxProb > 0.25 && freq >= 4) {
-         // Anti-spam handled in _onGestureDetected with timeout
+      // PRECISE MODEL THRESHOLDS:
+      // Prob > 0.85 (High confidence)
+      // Freq >= 6 (Stable for ~300ms)
+      if (maxProb > 0.85 && freq >= 6) {
          _onGestureDetected(label);
          
-         // Don't clear immediately, let it flow? 
-         // Python: self.candidate_history = [] # Reset après validation
+         // Clear buffer to prevent double triggers for the same gesture instance
          _wordCandidateHistory.clear();
          _sequenceBuffer.clear();
       }
