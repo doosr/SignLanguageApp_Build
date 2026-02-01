@@ -188,7 +188,13 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
     // Check if we should use ESP32 camera
     if (_useESP32Camera) {
       // ESP32 camera doesn't need CameraController
-      print("✅ Using ESP32-CAM stream");
+      // Close phone camera if it was open
+      if (_controller != null) {
+        await _controller?.stopImageStream();
+        await _controller?.dispose();
+        _controller = null;
+      }
+      print("✅ Using ESP32-CAM stream - Phone camera closed");
       return;
     }
     
