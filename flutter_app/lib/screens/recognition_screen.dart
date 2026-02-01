@@ -175,8 +175,23 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
 
   Future<void> _loadModels() async {
     try {
-      _interpreterLetters = await Interpreter.fromAsset('assets/model_letters.tflite');
-      _interpreterWords = await Interpreter.fromAsset('assets/model_words.tflite');
+      final modelService = ModelService();
+      
+      print("Loading models from: ${modelService.lettersModelPath}");
+      
+      // Load from FILE (Application Documents Directory)
+      if (modelService.lettersModelPath.isNotEmpty) {
+        _interpreterLetters = Interpreter.fromFile(File(modelService.lettersModelPath));
+      } else {
+        // Fallback
+         _interpreterLetters = await Interpreter.fromAsset('assets/model_letters.tflite');
+      }
+
+      if (modelService.wordsModelPath.isNotEmpty) {
+         _interpreterWords = Interpreter.fromFile(File(modelService.wordsModelPath));
+      } else {
+         _interpreterWords = await Interpreter.fromAsset('assets/model_words.tflite');
+      }
 
       String labelsLettersRaw = await rootBundle.loadString('assets/model_letters_labels.txt');
       _labelsLetters = labelsLettersRaw.split('\n').where((s) => s.isNotEmpty).toList();

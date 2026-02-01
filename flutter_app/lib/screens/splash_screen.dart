@@ -8,6 +8,7 @@ import 'package:camera/camera.dart';
 import 'package:permission_handler/permission_handler.dart'; // Permissions
 import '../main.dart'; // To access global 'cameras' variable
 import '../services/esp32_camera_service.dart';
+import '../services/model_service.dart';
 import '../theme/app_theme.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -87,9 +88,14 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
         
         if (statuses[Permission.camera] != PermissionStatus.granted) {
           print("⚠️ Camera permission not granted: ${statuses[Permission.camera]}");
-          // On Windows, if denied, we might need to instruct user to check Settings
         }
         
+        // Init Models (Copy to local storage)
+        print("Initializing models...");
+        final modelService = ModelService();
+        await modelService.initialize();
+        print("Models ready");
+
         // Init ESP32
         final esp32Service = ESP32CameraService();
         await esp32Service.initialize();
