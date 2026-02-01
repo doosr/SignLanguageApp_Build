@@ -538,6 +538,10 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
 
       int maxIdx = 0;
       double maxProb = -1.0;
+      
+      // DEBUG PRINT
+      // print("🧠 LSTM Probabilities: ${output[0]}"); 
+
       for (int i = 0; i < output[0].length; i++) {
         if (output[0][i] > maxProb) {
           maxProb = output[0][i];

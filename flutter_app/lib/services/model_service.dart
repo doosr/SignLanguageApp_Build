@@ -70,9 +70,10 @@ class ModelService {
 
     // Check if file already exists
     if (await file.exists()) {
-      // Optional: Check file size or version if needed to re-copy updates
-      // For now, we assume if it exists, it's good (as per user request: "already saved for next launch")
-      return file.path;
+      // FORCE OVERWRITE: ensure we always have the latest model from assets
+      // This fixes the issue where app uses old cached models after an update
+      await file.delete(); 
+      print("♻️ Deleting old cached model: ${file.path}");
     }
 
     // Copy from assets
