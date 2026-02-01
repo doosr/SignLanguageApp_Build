@@ -357,14 +357,14 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       }
     }
 
-    if (maxProb > 0.75) { // Lowered threshold for better detection
+    if (maxProb > 0.82) { // Increased threshold to reduce false positives
       String label = _labelsLetters[maxIdx];
       
       _letterBuffer.add(label);
       if (_letterBuffer.length > 5) _letterBuffer.removeAt(0);
 
       int count = _letterBuffer.where((e) => e == label).length;
-      if (count >= 3 && detectedText != label) { // Reduced from 4 to 3
+      if (count >= 4 && detectedText != label) { // Increased from 3 to 4 for accuracy
         _onGestureDetected(label);
       }
     } else if (maxProb < 0.2) {
