@@ -1,9 +1,10 @@
 #ifndef ESPCAM_CONFIG_H
 #define ESPCAM_CONFIG_H
 
-// ===== WiFi Configuration (POINT D'ACCÈS / HOTSPOT) =====
-#define AP_SSID "ESPCam_SignLanguage"   // Nom du WiFi créé par l'ESP32
-#define AP_PASSWORD "12345678"          // Mot de passe (min 8 caractères)
+// ===== WiFi Configuration (STATION MODE - Connect to Router) =====
+// REPLACE WITH YOUR WIFI CREDENTIALS
+#define WIFI_SSID "Redmi"      // Nom de votre Box/Routeur
+#define WIFI_PASSWORD "12345678"  // Mot de passe WiFi
 
 // ===== Server Configuration =====
 #define SERVER_PORT 80

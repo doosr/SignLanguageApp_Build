@@ -473,63 +473,7 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
 
     return features;
   }
-    
-    // Safety padding if < 84 (should unlikely happen with logic above)
-    while (features.length < 84) features.add(0.0);
 
-    // Normalization (Min-Max Shift)
-    // We normalize the whole set relative to the bounding box of ALL hands
-    List<double> allXs = [];
-    List<double> allYs = [];
-    
-    for (int i = 0; i < features.length; i += 2) {
-       // Only count non-zero landmarks (simple heuristic, or verify if handsData used padding)
-       // Actually, we should collect min/max from original hands, not the padded-with-zeros vector
-       // But wait... features contains 0.0 for missing hand. 0.0 is a valid coordinate? 
-       // No, valid coordinates are usually > 0 if normalized?
-       // Let's iterate original handsData for normalization stats
-    }
-    
-    allXs.clear(); allYs.clear();
-    for (var hand in handsData) {
-       List<double> lm = getLandmarks(hand);
-       for (int i = 0; i < lm.length; i+=2) {
-          allXs.add(lm[i]);
-          allYs.add(lm[i+1]);
-       }
-    }
-    
-    if (allXs.isEmpty) return List.filled(84, 0.0);
-
-    double min_X = allXs.reduce((curr, next) => curr < next ? curr : next);
-    double min_Y = allYs.reduce((curr, next) => curr < next ? curr : next);
-
-    // Apply normalization to the FEATURES vector
-    // We only normalize the NON-ZERO parts (the actual hands)
-    // If we simply subtract min_X from 0.0 (padding), we get negative values.
-    // So we should rebuild features properly.
-    
-    List<double> normalizedFeatures = [];
-    
-    if (handsData.length == 1) {
-       List<double> h1 = getLandmarks(handsData[0]);
-       for (int i=0; i<h1.length; i+=2) {
-          normalizedFeatures.add(h1[i] - min_X);
-          normalizedFeatures.add(h1[i+1] - min_Y);
-       }
-       normalizedFeatures.addAll(List.filled(42, 0.0));
-    } else {
-       for (var hand in handsData.take(2)) {
-          List<double> h = getLandmarks(hand);
-          for (int i=0; i<h.length; i+=2) {
-             normalizedFeatures.add(h[i] - min_X);
-             normalizedFeatures.add(h[i+1] - min_Y);
-          }
-       }
-    }
-    
-    return normalizedFeatures;
-  }
 
   void _runInferenceLetters(List<double> features) {
     if (_interpreterLetters == null) return;

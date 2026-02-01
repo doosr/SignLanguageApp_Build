@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WebServer.h>
-#include <DNSServer.h>  // <--- Captive Portal
+// DNSServer removed
 #include "esp_camera.h"
 #include "esp_timer.h"
 #include "img_converters.h"
@@ -13,7 +13,7 @@
 #include "web_index.h"
 
 WebServer server(SERVER_PORT);
-DNSServer dnsServer; // <--- DNS Server object
+// dnsServer removed
 bool cameraInitialized = false;
 
 void setupWiFi();
@@ -46,7 +46,7 @@ void setup() {
   if (DEBUG_SERIAL) {
     Serial.println("Serveur HTTP démarré");
     Serial.print("URL du stream: http://");
-    Serial.print(WiFi.softAPIP());
+    Serial.print(WiFi.localIP()); // Updated to localIP()
     Serial.println("/stream");
   }
   
@@ -54,32 +54,47 @@ void setup() {
 }
 
 void loop() {
-  dnsServer.processNextRequest(); // <--- Traiter les requêtes DNS
+  // dnsServer removed
   server.handleClient();
   delay(1);
 }
 
+// WiFi Station Mode (Connect to Router)
+// -------------------------------------
 void setupWiFi() {
   if (DEBUG_SERIAL) {
-    Serial.println("Création du Point d'Accès WiFi (Hotspot)...");
-    Serial.print("SSID: ");
-    Serial.println(AP_SSID);
+    Serial.println("\nConnexion au WiFi (Station Mode)...");
+    Serial.print("SSID Cible: ");
+    Serial.println(WIFI_SSID);
   }
   
-  WiFi.mode(WIFI_AP);
-  WiFi.softAP(AP_SSID, AP_PASSWORD);
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   
-  delay(100);
-  
-  // Démarrer DNS Server pour Captive Portal (redirige tout vers l'IP)
-  dnsServer.start(53, "*", WiFi.softAPIP()); // <--- START DNS
+  int attempts = 0;
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    if (DEBUG_SERIAL) Serial.print(".");
+    blinkLED(1, 50);
+    attempts++;
+    
+    // Reboot if connection fails too long (30s)
+    if (attempts > 60) {
+      if (DEBUG_SERIAL) Serial.println("\n❌ Echec Connexion. Redémarrage...");
+      ESP.restart();
+    }
+  }
   
   if (DEBUG_SERIAL) {
-    Serial.println("\nPoint d'Accès créé avec succès!");
-    Serial.print("Connectez votre téléphone au WiFi: ");
-    Serial.println(AP_SSID);
-    Serial.print("Adresse IP: ");
-    Serial.println(WiFi.softAPIP());
+    Serial.println("\n✅ Connecté au WiFi !");
+    Serial.print("📡 ADRESSE IP À SAISIR DANS L'APP: http://");
+    Serial.println(WiFi.localIP()); 
+    Serial.println("----------------------------------------");
+    
+    // Blink signal success (Long blink)
+    digitalWrite(LED_PIN, LED_ON);
+    delay(1000);
+    digitalWrite(LED_PIN, LED_OFF);
   }
 }
 
