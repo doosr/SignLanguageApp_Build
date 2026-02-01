@@ -10,6 +10,7 @@
 #include "soc/rtc_cntl_reg.h"
 #include "config.h"
 #include "camera_pins.h"
+#include "web_index.h"
 
 WebServer server(SERVER_PORT);
 DNSServer dnsServer; // <--- DNS Server object
@@ -140,11 +141,7 @@ void setupServer() {
 }
 
 void handleRoot() {
-  String html = "<html><body><h1>ESP32-CAM Sign Language</h1>";
-  html += "<p>IP: " + WiFi.softAPIP().toString() + "</p>";
-  html += "<p><a href='/stream'>Voir le Stream</a></p>";
-  html += "</body></html>";
-  server.send(200, "text/html", html);
+  server.send(200, "text/html", INDEX_HTML);
 }
 
 void handleStream() {

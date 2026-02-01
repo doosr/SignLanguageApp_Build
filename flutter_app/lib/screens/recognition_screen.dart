@@ -421,7 +421,7 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
      }
   }
 
-  // UPDATED ISOLATE FUNCTION: Spatial Sorting (Left->Right)
+  // UPDATED ISOLATE FUNCTION: Spatial Sorting AND Relative Normalization
   static List<double> _processHandLandmarksSpatial(List<Map<String, dynamic>> handsData) {
     if (handsData.isEmpty) return List.filled(84, 0.0);
 
@@ -429,33 +429,50 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       return (hand['landmarks'] as List).cast<double>();
     }
 
-    // Sort hands left-to-right based on first landmark X
+    // 1. Sort hands left-to-right
     handsData.sort((a, b) {
       double xa = getLandmarks(a)[0];
       double xb = getLandmarks(b)[0];
       return xa.compareTo(xb);
     });
 
+    // 2. Calculate MinX and MinY across ALL detected landmarks (Global bounding box for the frame)
+    double minX = double.infinity;
+    double minY = double.infinity;
+
+    for (var hand in handsData) {
+      List<double> lm = getLandmarks(hand);
+      for (int i = 0; i < lm.length; i += 2) {
+        if (lm[i] < minX) minX = lm[i];
+        if (lm[i+1] < minY) minY = lm[i+1];
+      }
+    }
+
+    // 3. Normalize relative to minX, minY
+    List<double> normalizeHand(List<double> landmarks) {
+      List<double> normalized = [];
+      for (int i = 0; i < landmarks.length; i += 2) {
+        normalized.add(landmarks[i] - minX);
+        normalized.add(landmarks[i+1] - minY);
+      }
+      return normalized;
+    }
+
     List<double> features = [];
 
-    // SINGLE HAND CASE:
-    // If only 1 hand is detected, we put it in the first slot (0-41)
-    // and zero-pad the second slot (42-83).
-    // This matches the Python training where single-hand samples are usually stored in the first block.
-    // LIMITATION: If the user uses their Right hand, and it's the only hand, it goes to Slot 1.
-    // If the model expects Right Hand in Slot 2, this fails. 
-    // BUT since we can't determine chirality without 'label', we assume consistency.
-    
+    // SINGLE HAND CASE
     if (handsData.length == 1) {
-       features.addAll(getLandmarks(handsData[0])); // Slot 1
-       features.addAll(List.filled(42, 0.0));      // Slot 2
-    } else {
-       // TWO HANDS: Slot 1 = Leftmost, Slot 2 = Rightmost
-       // Take max 2 hands
-       for (var hand in handsData.take(2)) {
-         features.addAll(getLandmarks(hand));
-       }
+       features.addAll(normalizeHand(getLandmarks(handsData[0]))); // Slot 1
+       features.addAll(List.filled(42, 0.0));      // Slot 2 (Padding)
+    } 
+    // TWO HANDS CASE
+    else {
+       features.addAll(normalizeHand(getLandmarks(handsData[0]))); // Slot 1
+       features.addAll(normalizeHand(getLandmarks(handsData[1]))); // Slot 2
     }
+
+    return features;
+  }
     
     // Safety padding if < 84 (should unlikely happen with logic above)
     while (features.length < 84) features.add(0.0);

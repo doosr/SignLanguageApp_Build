@@ -61,6 +61,7 @@ flutter:
     - assets/gestures/
     - assets/model_letters.tflite
     - assets/model_words.tflite
+    - assets/model_words_lstm.tflite # Added Explicitly
     - assets/model_letters_labels.txt
     - assets/model_words_labels.txt
     - assets/hand_landmarker.task
