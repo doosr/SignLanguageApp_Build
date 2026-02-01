@@ -77,6 +77,6 @@ msix_config:
   
   # Configuration pour signer automatiquement
   certificate_path: SignLanguageApp.pfx
-  certificate_password: Test123!
+  certificate_password: GitHubActions123!
   publisher: CN=Doosr
   install_certificate: false  # Disable for CI/CD (no interactive prompts)
