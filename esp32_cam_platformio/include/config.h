@@ -9,9 +9,9 @@
 #define SERVER_PORT 80
 
 // ===== Camera Configuration =====
-#define CAMERA_FRAME_SIZE FRAMESIZE_VGA // 640x480
-#define JPEG_QUALITY 10
-#define FRAME_BUFFERS 2
+#define CAMERA_FRAME_SIZE FRAMESIZE_QVGA // 320x240 (Plus rapide, moins de latence)
+#define JPEG_QUALITY 12                  // 10-63 (Plus bas = meilleure qualité, mais plus lent. 12 est un bon équilibre)
+#define FRAME_BUFFERS 2                  // 2 buffers pour stream fluide
 
 // ===== LED Configuration =====
 #define LED_PIN 4

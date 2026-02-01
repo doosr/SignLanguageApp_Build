@@ -58,38 +58,46 @@ class _ESP32ConfigScreenState extends State<ESP32ConfigScreen> {
         await _saveSettings();
         
         // Notify ESP32CameraService
-        final esp32Service = ESP32CameraService();
-        await esp32Service.setIpAddress(_ipController.text);
-        
-        // Force Enable if successful
-        if (!_cameraEnabled) {
-          setState(() { _cameraEnabled = true; });
-          await esp32Service.setEnabled(true);
-          
-          // FIX: Get prefs instance before using it
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setBool('esp32_camera_enabled', true);
-        } else {
-           await esp32Service.setEnabled(true);
-        }
-        
+        final service = ESP32CameraService();
+        await service.setIpAddress(_ipController.text);
+      
+        bool success = await service.testConnection();
+        await service.setEnabled(success);
+      
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('✓ Connexion réussie ! Redirection...'),
-              backgroundColor: Color(0xFF4ade80),
-              duration: Duration(seconds: 1),
-            ),
-          );
-          
-          // Auto-Navigate to Recognition Screen after short delay
-          Future.delayed(const Duration(seconds: 1), () {
-             if (mounted) {
-               // Use pushReplacement to replace config screen, or pushNamedAndRemoveUntil to reset queue
-               // Assuming '/recognition' route exists or using direct MaterialPageRoute
-               Navigator.of(context).pushNamed('/recognition');
-             }
+          setState(() {
+            _isConnected = success;
+            _isTesting = false;
           });
+          
+          if (success) {
+             ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('✅ Connecté à l\'ESP32 ! Redirection...'),
+                backgroundColor: Color(0xFF4ade80),
+                duration: Duration(seconds: 1),
+              ),
+            );
+            
+            // Auto-navigate to Recognition Screen with ESP32 mode active
+            // Delay briefly to show success message
+            await Future.delayed(const Duration(milliseconds: 500));
+            if (mounted) {
+               Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const RecognitionScreen(initialMode: "LETTRES"),
+                ),
+              );
+            }
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('❌ Échec de connexion. Vérifiez l\'IP et le WiFi.'),
+                backgroundColor: Color(0xFFef4444),
+              ),
+            );
+          }
         }
       }
     } catch (e) {

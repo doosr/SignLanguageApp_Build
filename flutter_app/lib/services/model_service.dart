@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
+import 'package:tflite_flutter/tflite_flutter.dart'; // Import required for Interpreter
 
 class ModelService {
   static final ModelService _instance = ModelService._internal();
@@ -11,13 +12,56 @@ class ModelService {
   String? _lettersModelPath;
   String? _wordsModelPath;
   String? _handLandmarkerPath;
+  
+  // CACHE: Loaded Interpreters
+  Interpreter? interpreterLetters;
+  Interpreter? interpreterWords;
+  List<String> labelsLetters = [];
+  List<String> labelsWords = [];
+  bool get areModelsLoaded => interpreterLetters != null && interpreterWords != null;
 
   Future<void> initialize() async {
     _lettersModelPath = await _copyAssetToFile('assets/model_letters.tflite', 'model_letters.tflite');
     _wordsModelPath = await _copyAssetToFile('assets/model_words.tflite', 'model_words.tflite');
     _handLandmarkerPath = await _copyAssetToFile('assets/hand_landmarker.task', 'hand_landmarker.task');
     
-    print("✅ Models initialized and present in local storage");
+    // Auto-load into memory if not already done
+    if (!areModelsLoaded) {
+       await loadInterpreters();
+    }
+  }
+  
+  Future<void> loadInterpreters() async {
+    if (areModelsLoaded) return; // Skip if already active
+    
+    print("🧠 Loading models into memory...");
+    
+    try {
+      // 1. Letters
+      if (_lettersModelPath != null && await File(_lettersModelPath!).exists()) {
+        interpreterLetters = Interpreter.fromFile(File(_lettersModelPath!));
+      } else {
+        interpreterLetters = await Interpreter.fromAsset('assets/model_letters.tflite');
+      }
+      
+      // 2. Words
+      if (_wordsModelPath != null && await File(_wordsModelPath!).exists()) {
+        interpreterWords = Interpreter.fromFile(File(_wordsModelPath!));
+      } else {
+        interpreterWords = await Interpreter.fromAsset('assets/model_words.tflite');
+      }
+      
+      // 3. Labels
+      String l1 = await rootBundle.loadString('assets/model_letters_labels.txt');
+      labelsLetters = l1.split('\n').where((s) => s.isNotEmpty).toList();
+      
+      String l2 = await rootBundle.loadString('assets/model_words_labels.txt');
+      labelsWords = l2.split('\n').where((s) => s.isNotEmpty).toList();
+      
+      print("🧠 Models loaded in RAM!");
+    } catch (e) {
+      print("❌ Model MEMORY load failed: $e");
+    }
   }
 
   Future<String> _copyAssetToFile(String assetPath, String filename) async {

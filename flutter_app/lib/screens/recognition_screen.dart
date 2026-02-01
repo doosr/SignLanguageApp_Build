@@ -130,6 +130,9 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
     setState(() {
       _isInitializing = true;
     });
+    
+    // Allow UI to render the loading screen before heavy work
+    await Future.delayed(const Duration(milliseconds: 50));
 
     try {
       // Load language preference
@@ -188,29 +191,21 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
     try {
       final modelService = ModelService();
       
-      print("Loading models from: ${modelService.lettersModelPath}");
-      
-      // Load from FILE (Application Documents Directory)
-      if (modelService.lettersModelPath.isNotEmpty) {
-        _interpreterLetters = Interpreter.fromFile(File(modelService.lettersModelPath));
+      // Load or Get Cached Models
+      if (!modelService.areModelsLoaded) {
+        print("Loading models...");
+        await modelService.loadInterpreters();
       } else {
-        // Fallback
-         _interpreterLetters = await Interpreter.fromAsset('assets/model_letters.tflite');
+        print("⚡ Using cached RAM models (Instant Load)");
       }
-
-      if (modelService.wordsModelPath.isNotEmpty) {
-         _interpreterWords = Interpreter.fromFile(File(modelService.wordsModelPath));
-      } else {
-         _interpreterWords = await Interpreter.fromAsset('assets/model_words.tflite');
-      }
-
-      String labelsLettersRaw = await rootBundle.loadString('assets/model_letters_labels.txt');
-      _labelsLetters = labelsLettersRaw.split('\n').where((s) => s.isNotEmpty).toList();
       
-      String labelsWordsRaw = await rootBundle.loadString('assets/model_words_labels.txt');
-      _labelsWords = labelsWordsRaw.split('\n').where((s) => s.isNotEmpty).toList();
+      // Assign references
+      _interpreterLetters = modelService.interpreterLetters;
+      _interpreterWords = modelService.interpreterWords;
+      _labelsLetters = modelService.labelsLetters;
+      _labelsWords = modelService.labelsWords;
       
-      print("✅ Models and Labels loaded successfully!");
+      print("✅ Models ready!");
     } catch (e) {
       print("❌ Error loading models: $e");
     }
@@ -969,7 +964,6 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
             // Camera Preview (ESP32 or Phone)
             _useESP32Camera ? _buildESP32Stream() : CameraPreview(_controller!),
             
-            // Camera source indicator
             Positioned(
               top: 12,
               right: 12,
@@ -983,6 +977,22 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    if (_useESP32Camera) ...[
+                      const BlinkingDot(color: Colors.redAccent),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'EN DIRECT',
+                        style: TextStyle(
+                          color: Colors.redAccent,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(width: 1, height: 12, color: Colors.white24),
+                      const SizedBox(width: 8),
+                    ],
                     Icon(
                       _useESP32Camera ? Icons.wifi : Icons.phone_android,
                       size: 14,
@@ -990,7 +1000,7 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
                     ),
                     const SizedBox(width: 6),
                     Text(
-                      _useESP32Camera ? 'ESP32' : 'Téléphone',
+                      _useESP32Camera ? 'ESP32-CAM' : 'Téléphone',
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 11,
