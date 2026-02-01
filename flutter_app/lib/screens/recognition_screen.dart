@@ -385,9 +385,12 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
 
   void _runInferenceWords(List<double> features) {
     if (_interpreterWords == null) return;
+    
+    // Add to sequence buffer
     _sequenceBuffer.add(features);
     if (_sequenceBuffer.length > _sequenceLength) _sequenceBuffer.removeAt(0);
 
+    // Need full sequence for word detection
     if (_sequenceBuffer.length == _sequenceLength) {
       var flattenedSequence = _sequenceBuffer.expand((f) => f).toList();
       var input = [flattenedSequence];
@@ -403,7 +406,8 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
         }
       }
 
-      if (maxProb > 0.50) { // Lowered threshold for better word detection
+      // Adjusted threshold for better word detection
+      if (maxProb > 0.55) {
         String label = _labelsWords[maxIdx];
         
         _wordCandidateHistory.add(label);
@@ -411,11 +415,15 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
         
         int freq = _wordCandidateHistory.where((e) => e == label).length;
         
-        if (freq >= 2 && detectedText != label) { // Reduced from 3 to 2
+        // Require 3 out of 8 for stability
+        if (freq >= 3 && detectedText != label) {
            _onGestureDetected(label);
            _wordCandidateHistory.clear();
            _sequenceBuffer.clear();
         }
+      } else if (maxProb < 0.25) {
+        // Clear if confidence very low
+        _wordCandidateHistory.clear();
       }
     }
   }
