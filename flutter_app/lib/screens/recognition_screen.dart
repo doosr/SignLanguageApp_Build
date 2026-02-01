@@ -231,11 +231,23 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       await _controller?.initialize();
       if (!mounted) return;
       
+      // IMPORTANT: Trigger UI update after camera is ready
+      if (mounted) {
+        setState(() {
+          // Camera is now initialized, UI will rebuild and show preview
+        });
+      }
+      
       // Start image stream immediately
       _controller?.startImageStream(_processCameraImage);
       print("✅ Camera initialized and streaming");
     } catch (e) {
       print("Camera init error: $e");
+      if (mounted) {
+        setState(() {
+          // Update UI even on error
+        });
+      }
     }
   }
 
