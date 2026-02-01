@@ -176,19 +176,14 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
 
   Future<void> _initPlugin() async {
     try {
-      final modelPath = ModelService().handLandmarkerPath;
-      if (modelPath.isEmpty) {
-        print("❌ HandLandmarker model path not found (Check ModelService.initialize)");
-        // Fallback or retry?
-      }
-
+      // Note: hand_landmarker plugin downloads model if not found.
+      // We ensure permissions are granted before this.
       _plugin = HandLandmarkerPlugin.create(
-        modelPath: modelPath.isNotEmpty ? modelPath : null, // Use local if available, else download (fallback)
         numHands: 2,
         minHandDetectionConfidence: 0.5, 
         delegate: HandLandmarkerDelegate.gpu, 
       );
-      print("✅ HandLandmarkerPlugin initialized (Path: $modelPath)");
+      print("✅ HandLandmarkerPlugin initialized");
     } catch (e) {
       print("Plugin init error: $e");
     }
@@ -200,7 +195,9 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
 
   Future<void> _loadModels() async {
     try {
-      // Ensure assets are copied to storage (Critical for offline HandLandmarker)
+      final modelService = ModelService();
+      
+      // Ensure assets are copied to storage
       await modelService.initialize();
       
       // Load or Get Cached Models
