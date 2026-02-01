@@ -125,6 +125,51 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
   void initState() {
     super.initState();
     _initializeResources();
+    // Listen to connection changes for auto-switching
+    _esp32Service.isConnected.addListener(_onConnectionChanged);
+  }
+
+  @override
+  void dispose() {
+    _esp32Service.isConnected.removeListener(_onConnectionChanged);
+    _controller?.stopImageStream();
+    _controller?.dispose();
+    _plugin?.dispose();
+    super.dispose();
+  }
+
+  void _onConnectionChanged() {
+    if (!mounted) return;
+    bool isConnected = _esp32Service.isConnected.value;
+    
+    // Valid only if enabled in settings
+    if (_esp32Service.isEnabled.value) {
+      setState(() {
+         // Auto-switch: If connected -> ESP32, else -> Phone
+         _useESP32Camera = isConnected; 
+      });
+      
+      // Trigger camera resource switch
+      _initCamera();
+      
+      if (isConnected) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("📡 ESP32-CAM Connectée - Passage en vue Live"),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          )
+        );
+      } else {
+         ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("⚠️ ESP32-CAM Déconnectée - Retour caméra téléphone"),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 2),
+          )
+        );
+      }
+    }
   }
 
   Future<void> _initializeResources() async {
@@ -615,13 +660,7 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
     _speak();
   }
 
-  @override
-  void dispose() {
-    _controller?.stopImageStream();
-    _controller?.dispose();
-    _plugin?.dispose();
-    super.dispose();
-  }
+
 
   void _speak() async {
     if (phrase.isNotEmpty) {
