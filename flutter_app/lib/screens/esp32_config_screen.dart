@@ -65,6 +65,9 @@ class _ESP32ConfigScreenState extends State<ESP32ConfigScreen> {
         if (!_cameraEnabled) {
           setState(() { _cameraEnabled = true; });
           await esp32Service.setEnabled(true);
+          
+          // FIX: Get prefs instance before using it
+          final prefs = await SharedPreferences.getInstance();
           await prefs.setBool('esp32_camera_enabled', true);
         } else {
            await esp32Service.setEnabled(true);
