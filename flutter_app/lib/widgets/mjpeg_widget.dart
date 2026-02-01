@@ -93,10 +93,10 @@ class _MjpegWidgetState extends State<MjpegWidget> {
       final cType = response.headers['content-type'];
       print("MJPEG Stream Content-Type: $cType");
       
+      // RELAXED VALIDATION: Log warning but don't abort. 
+      // Some ESP32 servers send text/plain or nothing.
       if (cType != null && !cType.contains('multipart') && !cType.contains('image')) {
-         print("❌ Invalid Content-Type: $cType (Expected multipart or image)");
-         _handleError();
-         return;
+         print("⚠️ Warning: Unusual Content-Type: $cType. Attempting to parse anyway.");
       }
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
