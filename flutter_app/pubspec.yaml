@@ -70,4 +70,9 @@ msix_config:
   logo_path: assets/app_icon.png
   capabilities: webcam, microphone
   languages: en-us, fr-fr, ar-sa
-  install_certificate: false  # Disable for CI/CD builds
+  
+  # Ajouter ces lignes pour signer automatiquement
+  certificate_path: SignLanguageApp.pfx
+  certificate_password: Test123!
+  publisher: CN=Doosr
+  install_certificate: true  # Installer automatiquement lors de la création

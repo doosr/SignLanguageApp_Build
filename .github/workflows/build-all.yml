@@ -54,7 +54,7 @@ jobs:
           retention-days: 30
 
   build-windows:
-    name: 🪟 Build Windows EXE
+    name: 🪟 Build Windows EXE + MSIX
     runs-on: windows-latest
     
     steps:
@@ -82,17 +82,37 @@ jobs:
         run: flutter build windows --release
         working-directory: flutter_app
       
-      - name: 📦 Create ZIP archive
+      - name: 🔐 Create Self-Signed Certificate
         run: |
-          cd flutter_app/build/windows/x64/runner/Release
-          Compress-Archive -Path * -DestinationPath SignLanguageApp-Windows-v${{ github.run_number }}.zip
+          $cert = New-SelfSignedCertificate -Type Custom -Subject "CN=Doosr" -KeyUsage DigitalSignature -FriendlyName "SignLanguageApp" -CertStoreLocation "Cert:\CurrentUser\My"
+          $password = ConvertTo-SecureString -String "GitHubActions123!" -Force -AsPlainText
+          Export-PfxCertificate -Cert $cert -FilePath "flutter_app\SignLanguageApp.pfx" -Password $password
         shell: pwsh
       
-      - name: 📤 Upload Windows Artifact
+      - name: 📦 Create MSIX Package
+        run: flutter pub run msix:create
+        working-directory: flutter_app
+        env:
+          MSIX_CERTIFICATE_PASSWORD: GitHubActions123!
+      
+      - name: 📦 Create ZIP archive (Portable)
+        run: |
+          cd flutter_app/build/windows/x64/runner/Release
+          Compress-Archive -Path * -DestinationPath SignLanguageApp-Windows-Portable-v${{ github.run_number }}.zip
+        shell: pwsh
+      
+      - name: 📤 Upload MSIX Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Windows-EXE
-          path: flutter_app/build/windows/x64/runner/Release/SignLanguageApp-Windows-v${{ github.run_number }}.zip
+          name: Windows-MSIX
+          path: flutter_app/build/windows/x64/runner/Release/*.msix
+          retention-days: 30
+      
+      - name: 📤 Upload ZIP Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-ZIP
+          path: flutter_app/build/windows/x64/runner/Release/SignLanguageApp-Windows-Portable-v${{ github.run_number }}.zip
           retention-days: 30
 
   create-release:
