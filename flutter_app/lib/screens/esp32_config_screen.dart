@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'dart:ui';
 import '../services/esp32_camera_service.dart';
+import 'recognition_screen.dart';
 
 class ESP32ConfigScreen extends StatefulWidget {
   const ESP32ConfigScreen({Key? key}) : super(key: key);
