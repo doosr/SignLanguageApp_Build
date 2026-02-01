@@ -10,7 +10,7 @@ class MjpegWidget extends StatefulWidget {
   final WidgetBuilder? errorBuilder;
   final Widget? loadingWidget;
   final Map<String, String>? headers;
-  final bool isLive; // If true, tries to reconnect automatically
+  final bool isLive; 
 
   const MjpegWidget({
     Key? key,
@@ -33,8 +33,10 @@ class _MjpegWidgetState extends State<MjpegWidget> {
   bool _hasError = false;
   bool _mounted = true;
   Timer? _reconnectTimer;
+  
+  // Stats for debug
+  int _dataReceived = 0;
 
-  // Boundary markers for MJPEG (JPEG starts with FF D8, ends with FF D9)
   static const int _trigger = 0xFF;
   static const int _soi = 0xD8;
   static const int _eoi = 0xD9;
@@ -69,7 +71,6 @@ class _MjpegWidgetState extends State<MjpegWidget> {
     _httpClient?.close();
     _subscription = null;
     
-    // Don't reset image immediately to avoid flicker if just reconnecting
     if (_mounted) {
       setState(() {
         _hasError = false; 
@@ -83,10 +84,21 @@ class _MjpegWidgetState extends State<MjpegWidget> {
         request.headers.addAll(widget.headers!);
       }
       
-      // Add timeout
       Future<http.StreamedResponse> responseFuture = _httpClient!.send(request);
       final response = await responseFuture.timeout(const Duration(seconds: 5));
       
+      // CRITICAL: Check Content-Type to avoid reading HTML as MJPEG
+      // ESP32 usually returns "multipart/x-mixed-replace; boundary=frame"
+      // or "image/jpeg" if single frame
+      final cType = response.headers['content-type'];
+      print("MJPEG Stream Content-Type: $cType");
+      
+      if (cType != null && !cType.contains('multipart') && !cType.contains('image')) {
+         print("❌ Invalid Content-Type: $cType (Expected multipart or image)");
+         _handleError();
+         return;
+      }
+
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final stream = response.stream;
         List<int> buffer = [];
@@ -94,31 +106,29 @@ class _MjpegWidgetState extends State<MjpegWidget> {
         _subscription = stream.listen((chunk) {
           if (!_mounted) return;
           
+          // SAFETY: Don't read infinite data if parsing fails
+          if (buffer.length > 500000) { // 500KB limit
+             print("⚠️ Buffer overflow, clearing. Missing JPEG markers?");
+             buffer.clear();
+          }
+
           buffer.addAll(chunk);
+          _dataReceived += chunk.length;
           
-          // Efficient parsing: Find EOI (FF D9)
-          // We only need to search from the end of the previous buffer to save time
-          // But since we just appended chunk, we search the end of buffer
-          // Optimization: Only search properly when buffer has enough data
-          
-          if (buffer.length < 100) return; // Wait for reasonable data
+          if (buffer.length < 100) return; 
 
           int eoiIndex = -1;
           
-          // Reverse search is faster if we assume the image ends near the end of the chunk
+          // Reverse search is efficient
           for (int i = buffer.length - 2; i >= 0; i--) {
             if (buffer[i] == _trigger && buffer[i+1] == _eoi) {
               eoiIndex = i + 1;
               break;
             }
-            // Safety break to stop searching too far back if buffer is huge
-            // However, we need to find the specific EOI
           }
           
           if (eoiIndex != -1) {
-            // Found end of image, now find Start of Image (SOI) FF D8
             int soiIndex = -1;
-             // Search backwards from EOI
             for (int i = eoiIndex - 2; i >= 0; i--) {
               if (buffer[i] == _trigger && buffer[i+1] == _soi) {
                 soiIndex = i;
@@ -127,8 +137,8 @@ class _MjpegWidgetState extends State<MjpegWidget> {
             }
             
             if (soiIndex != -1) {
-              // We have a full image [soiIndex, eoiIndex + 1]
               try {
+                // Copy data to avoid buffer mutation issues during setState
                 final jpegData = Uint8List.fromList(buffer.sublist(soiIndex, eoiIndex + 1));
                 if (_mounted) {
                   setState(() {
@@ -136,29 +146,18 @@ class _MjpegWidgetState extends State<MjpegWidget> {
                      _hasError = false;
                   });
                 }
-              } catch (e) {
-                // Ignore corruption
-              }
-              // Clean buffer: remove everything up to EOI
-              // Keep anything after EOI (next frame start)
+              } catch (e) { }
+              
+              // Keep residual bytes
               buffer.removeRange(0, eoiIndex + 1);
             } else {
-              // Found EOI but no SOI? Corrupt or start was in discarded buffer.
-              // clear buffer up to EOI to resync
               buffer.removeRange(0, eoiIndex + 1);
             }
           }
-          
-           // Overflow protection
-          if (buffer.length > 500000) { 
-            buffer.clear(); 
-          }
-
         }, onError: (e) {
           print("MJPEG Stream logic error: $e");
           _handleError();
         }, onDone: () {
-           print("MJPEG Stream closed");
            _handleError();
         });
       } else {
@@ -174,9 +173,8 @@ class _MjpegWidgetState extends State<MjpegWidget> {
   void _handleError() {
     if (!_mounted) return;
     if (widget.isLive) {
-      // Retry after delay
       _reconnectTimer?.cancel();
-      _reconnectTimer = Timer(const Duration(seconds: 2), () {
+      _reconnectTimer = Timer(const Duration(seconds: 3), () {
         if (_mounted) _startStream();
       });
     } else {
@@ -186,18 +184,18 @@ class _MjpegWidgetState extends State<MjpegWidget> {
 
   @override
   Widget build(BuildContext context) {
-    if (_hasError && _imageBytes == null) {
+    if (_hasError) {
       if (widget.errorBuilder != null) return widget.errorBuilder!(context);
       return Container(
         color: Colors.black,
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.videocam_off, color: Colors.white54, size: 40),
+            const Icon(Icons.broken_image, color: Colors.white54, size: 40),
             const SizedBox(height: 8),
-            const Text("Connexion...", style: TextStyle(color: Colors.white54)),
-            const SizedBox(height: 8),
-            SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white30))
+            const Text("Connexion échouée", style: TextStyle(color: Colors.white54)),
+            const SizedBox(height: 4),
+            const Text("Vérifiez le WiFi", style: TextStyle(color: Colors.white24, fontSize: 10)),
           ],
         ),
       );
@@ -207,14 +205,21 @@ class _MjpegWidgetState extends State<MjpegWidget> {
       if (widget.loadingWidget != null) return widget.loadingWidget!;
       return Container(
         color: Colors.black,
-        child: const Center(child: CircularProgressIndicator(color: Colors.blueAccent)),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const CircularProgressIndicator(color: Colors.blueAccent),
+            const SizedBox(height: 12),
+            Text("Connexion ESP32...", style: TextStyle(color: Colors.white.withOpacity(0.5))),
+          ],
+        ),
       );
     }
 
     return Image.memory(
       _imageBytes!,
       fit: widget.fit,
-      gaplessPlayback: true, // Prevents flickering
+      gaplessPlayback: true, 
     );
   }
 }
