@@ -342,10 +342,9 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
     if (_isDetecting || _plugin == null) return;
     
     _frameCounter++;
-    // OPTIMIZATION: Process every 4th frame (instead of 8) for smoother UI
-    // 8 frames @ 30fps = ~266ms latency (feel laggy)
-    // 4 frames @ 30fps = ~133ms latency (smoother)
-    if (_frameCounter % 4 != 0) return; 
+    // OPTIMIZATION: Process every 2nd frame for faster tracking
+    // 2 frames @ 30fps = ~66ms latency (very responsive)
+    if (_frameCounter % 2 != 0) return; 
     
     _isDetecting = true;
     
@@ -727,12 +726,14 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
                             valueListenable: _handsNotifier,
                             builder: (context, currentHands, _) {
                               if (currentHands.isEmpty) return const SizedBox.shrink();
-                              return CustomPaint(
-                                painter: HandPainter(
-                                  currentHands,
-                                  _controller!.value.previewSize!,
-                                  _sensorRotation,
-                                  isFrontCamera
+                              return RepaintBoundary(
+                                child: CustomPaint(
+                                  painter: HandPainter(
+                                    currentHands,
+                                    _controller!.value.previewSize!,
+                                    _sensorRotation,
+                                    isFrontCamera
+                                  ),
                                 ),
                               );
                             },
@@ -742,53 +743,55 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
                         // Large Glassmorphic Letter Overlay (Bottom Center of Camera)
                         Align(
                           alignment: Alignment.bottomCenter,
-                          child: Container(
-                            margin: const EdgeInsets.all(16),
-                            height: 100,
-                            width: double.infinity,
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  const Color(0xFF6366f1).withOpacity(0.3),
-                                  const Color(0xFFa855f7).withOpacity(0.3)
+                          child: RepaintBoundary(
+                            child: Container(
+                              margin: const EdgeInsets.all(16),
+                              height: 100,
+                              width: double.infinity,
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [
+                                    const Color(0xFF6366f1).withOpacity(0.3),
+                                    const Color(0xFFa855f7).withOpacity(0.3)
+                                  ],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(color: Colors.white.withOpacity(0.2)),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.2),
+                                    blurRadius: 15,
+                                    spreadRadius: 2
+                                  )
                                 ],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
                               ),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(color: Colors.white.withOpacity(0.2)),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.2),
-                                  blurRadius: 15,
-                                  spreadRadius: 2
-                                )
-                              ],
-                            ),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(20),
-                              child: BackdropFilter(
-                                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                                child: Center(
-                                  child: ValueListenableBuilder<String>(
-                                    valueListenable: _detectedTextNotifier,
-                                    builder: (context, text, _) {
-                                      return Text(
-                                        text.isEmpty ? "" : text,
-                                        style: const TextStyle(
-                                          fontSize: 60,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.white,
-                                          shadows: [
-                                            Shadow(
-                                              color: Colors.black45,
-                                              offset: Offset(0, 2),
-                                              blurRadius: 4
-                                            )
-                                          ]
-                                        ),
-                                      );
-                                    },
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(20),
+                                child: BackdropFilter(
+                                  filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                                  child: Center(
+                                    child: ValueListenableBuilder<String>(
+                                      valueListenable: _detectedTextNotifier,
+                                      builder: (context, text, _) {
+                                        return Text(
+                                          text.isEmpty ? "" : text,
+                                          style: const TextStyle(
+                                            fontSize: 60,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.white,
+                                            shadows: [
+                                              Shadow(
+                                                color: Colors.black45,
+                                                offset: Offset(0, 2),
+                                                blurRadius: 4
+                                              )
+                                            ]
+                                          ),
+                                        );
+                                      },
+                                    ),
                                   ),
                                 ),
                               ),
@@ -806,7 +809,7 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
                               color: Colors.black54,
                               borderRadius: BorderRadius.circular(12),
                             ),
-                            child: const Row(
+                            child: Row(
                               children: [
                                 BlinkingDot(color: Colors.redAccent),
                                 SizedBox(width: 8),
@@ -1165,7 +1168,7 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     if (_useESP32Camera) ...[
-                      const BlinkingDot(color: Colors.redAccent),
+                      BlinkingDot(color: Colors.redAccent),
                       const SizedBox(width: 8),
                       const Text(
                         'EN DIRECT',
@@ -1345,6 +1348,37 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
             child: Icon(icon, color: color, size: 20),
           ),
         ),
+      ),
+    );
+  }
+
+  // -- Action Buttons (Clear, Backspace, Space, Config) --
+  Widget _buildActionButtons() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16, left: 24, right: 24),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          _buildMiniButton(Icons.delete_outline, Colors.redAccent, _clear),
+          _buildMiniButton(Icons.backspace_outlined, Colors.orangeAccent, _backspace),
+          _buildMiniButton(Icons.space_bar, Colors.blueAccent, _addSpace),
+          _buildMiniButton(Icons.settings, Colors.grey, () => Navigator.pushNamed(context, '/esp32-config')),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMiniButton(IconData icon, Color color, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          shape: BoxShape.circle,
+          border: Border.all(color: color.withOpacity(0.3)),
+        ),
+        child: Icon(icon, color: color, size: 20),
       ),
     );
   }
