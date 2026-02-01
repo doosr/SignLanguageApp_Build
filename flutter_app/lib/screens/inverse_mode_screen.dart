@@ -202,8 +202,9 @@ class _InverseModeScreenState extends State<InverseModeScreen> with TickerProvid
 
   @override
   Widget build(BuildContext context) {
-    // Convert letters to gestures based on selected language
-    final letters = _recognizedText.split('').where((c) => c != ' ').map((letter) {
+    // Keep original letters for image paths, create display letters for UI
+    final originalLetters = _recognizedText.split('').where((c) => c != ' ').toList();
+    final displayLetters = originalLetters.map((letter) {
       return _letterToGesture[letter.toUpperCase()]?[_selectedLanguage] ?? letter;
     }).toList();
     
@@ -427,15 +428,16 @@ class _InverseModeScreenState extends State<InverseModeScreen> with TickerProvid
               const SizedBox(height: 30),
               
               // Gesture Sequence Display
-              if (letters.isNotEmpty)
+              if (originalLetters.isNotEmpty)
                 SizedBox(
                   height: 140,
                   child: ListView.builder(
                     scrollDirection: Axis.horizontal,
                     padding: const EdgeInsets.symmetric(horizontal: 24),
-                    itemCount: letters.length,
+                    itemCount: originalLetters.length,
                     itemBuilder: (context, index) {
-                      final letter = letters[index];
+                      final originalLetter = originalLetters[index];
+                      final displayLetter = displayLetters[index];
                       final isActive = index == _currentLetterIndex;
                       
                       return AnimatedContainer(
@@ -478,7 +480,7 @@ class _InverseModeScreenState extends State<InverseModeScreen> with TickerProvid
                                   top: Radius.circular(16),
                                 ),
                                 child: Image.asset(
-                                  'assets/gestures/${letter}_0.jpg',
+                                  'assets/gestures/${originalLetter.toUpperCase()}_0.jpg',
                                   fit: BoxFit.cover,
                                   errorBuilder: (context, error, stackTrace) {
                                     return Center(
@@ -494,7 +496,7 @@ class _InverseModeScreenState extends State<InverseModeScreen> with TickerProvid
                             Container(
                               padding: const EdgeInsets.symmetric(vertical: 8),
                               child: Text(
-                                letter,
+                                displayLetter,
                                 style: TextStyle(
                                   color: isActive ? Color(0xFF06b6d4) : Colors.white,
                                   fontSize: 20,
