@@ -1,5 +1,6 @@
 import 'dart:ui';
 import '../widgets/mjpeg_widget.dart';
+import '../widgets/blinking_dot.dart';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter_tts/flutter_tts.dart';

@@ -86,7 +86,7 @@ class _ESP32ConfigScreenState extends State<ESP32ConfigScreen> {
                Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => const RecognitionScreen(),
+                  builder: (context) => RecognitionScreen(),
                 ),
               );
             }
