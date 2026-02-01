@@ -27,7 +27,12 @@ bool FlutterWindow::OnCreate() {
   RegisterPlugins(flutter_controller_->engine());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
+  // IMPORTANT: Force window to show immediately
+  // Don't wait for Flutter callback which might not trigger
+  this->Show();
+
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
+    // Ensure window is visible (redundant but safe)
     this->Show();
   });
 
