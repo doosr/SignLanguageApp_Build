@@ -249,44 +249,45 @@ class _ESP32ConfigScreenState extends State<ESP32ConfigScreen> {
                               // Status et bouton test
                               Row(
                                 children: [
-                                  // Indicateur connecté
-                                  if (_isConnected)
-                                    Row(
-                                      children: [
-                                        Container(
-                                          width: 12,
-                                          height: 12,
-                                          decoration: const BoxDecoration(
-                                            color: Color(0xFF4ade80),
-                                            shape: BoxShape.circle,
-                                            boxShadow: [
-                                              BoxShadow(
-                                                color: Color(0xFF4ade80),
-                                                blurRadius: 8,
-                                                spreadRadius: 2,
-                                              ),
-                                            ],
-                                          ),
+                                  // Indicateur connecté/déconnecté
+                                  Row(
+                                    children: [
+                                      Container(
+                                        width: 12,
+                                        height: 12,
+                                        decoration: BoxDecoration(
+                                          color: _isConnected ? const Color(0xFF4ade80) : const Color(0xFFef4444),
+                                          shape: BoxShape.circle,
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: _isConnected ? const Color(0xFF4ade80) : const Color(0xFFef4444),
+                                              blurRadius: 8,
+                                              spreadRadius: 2,
+                                            ),
+                                          ],
                                         ),
-                                        const SizedBox(width: 10),
-                                        const Text(
-                                          'Connecté',
-                                          style: TextStyle(
-                                            color: Color(0xFF4ade80),
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w600,
-                                          ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Text(
+                                        _isConnected ? 'Connecté' : 'Non connecté',
+                                        style: TextStyle(
+                                          color: _isConnected ? const Color(0xFF4ade80) : const Color(0xFFef4444),
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w600,
                                         ),
-                                      ],
-                                    ),
+                                      ),
+                                    ],
+                                  ),
                                   
                                   const Spacer(),
                                   
-                                  // Bouton tester
+                                  // Bouton Démarrer/Arrêter
                                   ElevatedButton.icon(
-                                    onPressed: _isTesting ? null : _testConnection,
+                                    onPressed: _isTesting 
+                                      ? null 
+                                      : (_isConnected ? _disconnect : _testConnection),
                                     style: ElevatedButton.styleFrom(
-                                      backgroundColor: const Color(0xFF4ade80),
+                                      backgroundColor: _isConnected ? const Color(0xFFef4444) : const Color(0xFF4ade80),
                                       foregroundColor: Colors.white,
                                       padding: const EdgeInsets.symmetric(
                                         horizontal: 24,
@@ -308,12 +309,14 @@ class _ESP32ConfigScreenState extends State<ESP32ConfigScreen> {
                                               ),
                                             ),
                                           )
-                                        : const Icon(Icons.check_circle, size: 20),
+                                        : Icon(_isConnected ? Icons.stop_circle_outlined : Icons.play_arrow_rounded, size: 24),
                                     label: Text(
-                                      _isTesting ? 'Test...' : 'Tester la connexion',
+                                      _isTesting 
+                                        ? 'Connexion...' 
+                                        : (_isConnected ? 'Arrêter' : 'Démarrer'),
                                       style: const TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w600,
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
                                       ),
                                     ),
                                   ),
