@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:camera/camera.dart';
+import '../main.dart'; // To access global 'cameras' variable
+import '../services/esp32_camera_service.dart';
 import '../theme/app_theme.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -23,8 +28,10 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
   void initState() {
     super.initState();
     
-    // Hide status bar
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersive);
+    // Hide status bar ONLY on mobile
+    if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersive);
+    }
     
     // Fade animation
     _fadeController = AnimationController(
@@ -57,14 +64,52 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
     _fadeController.forward();
     _scaleController.forward();
     
-    // Navigate after 3 seconds
-    Timer(const Duration(seconds: 3), () {
-      SystemChrome.setEnabledSystemUIMode(
-        SystemUiMode.edgeToEdge,
-        overlays: [SystemUiOverlay.top, SystemUiOverlay.bottom],
-      );
-      Navigator.pushReplacementNamed(context, '/');
+    // Run initialization in parallel with animations
+    _initializeResources();
+  }
+
+  Future<void> _initializeResources() async {
+    // Minimum splash time
+    final minSplashTime = Future.delayed(const Duration(seconds: 3));
+    
+    // Initialize services
+    final initServices = Future(() async {
+      try {
+        print("Starting initialization...");
+        
+        // Init ESP32
+        final esp32Service = ESP32CameraService();
+        await esp32Service.initialize();
+        print("ESP32 Service initialized");
+        
+        // Init Cameras
+        try {
+          // Import this globally in main.dart or use a service locator
+          // For now, we assume 'cameras' is available globally from main.dart
+          // Note: Variable 'cameras' needs to be imported from main.dart
+          cameras = await availableCameras();
+          print("Cameras initialized: ${cameras.length} found");
+        } catch (e) {
+          print('Camera init error: $e');
+        }
+      } catch (e) {
+        print("Initialization error: $e");
+      }
     });
+
+    // Wait for both
+    await Future.wait([minSplashTime, initServices]);
+    
+    // Navigate
+    if (mounted) {
+      if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+        SystemChrome.setEnabledSystemUIMode(
+          SystemUiMode.edgeToEdge,
+          overlays: [SystemUiOverlay.top, SystemUiOverlay.bottom],
+        );
+      }
+      Navigator.pushReplacementNamed(context, '/');
+    }
   }
 
   @override

@@ -22,21 +22,12 @@ List<CameraDescription> cameras = [];
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // Configure window for desktop platforms
+  // Configure window for desktop platforms (Non-blocking)
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-    // Ensure window is visible and properly sized
-    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    // Window size and visibility is handled by C++ runner
   }
   
-  // Initialize ESP32 camera service
-  final esp32Service = ESP32CameraService();
-  await esp32Service.initialize();
-  
-  try {
-    cameras = await availableCameras();
-  } on CameraException catch (e) {
-    print('Error: $e.code\nError Message: $e.message');
-  }
+  // Initialize app immediately to avoid white screen
   runApp(const MyApp());
 }
 
