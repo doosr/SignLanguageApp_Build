@@ -202,7 +202,10 @@ class _InverseModeScreenState extends State<InverseModeScreen> with TickerProvid
 
   @override
   Widget build(BuildContext context) {
-    final letters = _recognizedText.split('').where((c) => c != ' ').toList();
+    // Convert letters to gestures based on selected language
+    final letters = _recognizedText.split('').where((c) => c != ' ').map((letter) {
+      return _letterToGesture[letter.toUpperCase()]?[_selectedLanguage] ?? letter;
+    }).toList();
     
     return Scaffold(
       body: Container(
@@ -491,7 +494,7 @@ class _InverseModeScreenState extends State<InverseModeScreen> with TickerProvid
                             Container(
                               padding: const EdgeInsets.symmetric(vertical: 8),
                               child: Text(
-                                _letterToGesture[letter]?[_selectedLanguage] ?? letter,
+                                letter,
                                 style: TextStyle(
                                   color: isActive ? Color(0xFF06b6d4) : Colors.white,
                                   fontSize: 20,

@@ -232,7 +232,7 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
     if (_isDetecting || _plugin == null) return;
     
     _frameCounter++;
-    if (_frameCounter % 12 != 0) return; // Increased frame skipping for better performance
+    if (_frameCounter % 8 != 0) return; // Reduced for better detection
     
     _isDetecting = true;
     
@@ -357,14 +357,14 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       }
     }
 
-    if (maxProb > 0.85) {
+    if (maxProb > 0.75) { // Lowered threshold for better detection
       String label = _labelsLetters[maxIdx];
       
       _letterBuffer.add(label);
       if (_letterBuffer.length > 5) _letterBuffer.removeAt(0);
 
       int count = _letterBuffer.where((e) => e == label).length;
-      if (count >= 4 && detectedText != label) {
+      if (count >= 3 && detectedText != label) { // Reduced from 4 to 3
         _onGestureDetected(label);
       }
     } else if (maxProb < 0.2) {
@@ -392,7 +392,7 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
         }
       }
 
-      if (maxProb > 0.60) { // Improved threshold for better word detection
+      if (maxProb > 0.50) { // Lowered threshold for better word detection
         String label = _labelsWords[maxIdx];
         
         _wordCandidateHistory.add(label);
@@ -400,7 +400,7 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
         
         int freq = _wordCandidateHistory.where((e) => e == label).length;
         
-        if (freq >= 3 && detectedText != label) { // Reduced from 4 to 3 for faster response
+        if (freq >= 2 && detectedText != label) { // Reduced from 3 to 2
            _onGestureDetected(label);
            _wordCandidateHistory.clear();
            _sequenceBuffer.clear();
