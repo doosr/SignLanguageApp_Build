@@ -606,6 +606,24 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
     } catch (e) {}
   }
 
+  Future<void> _toggleCameraSource() async {
+    setState(() {
+      _isInitializing = true;
+    });
+    
+    // Toggle source
+    _useESP32Camera = !_useESP32Camera;
+    
+    // Re-initialize appropriate camera
+    await _initCamera();
+    
+    if (mounted) {
+      setState(() {
+        _isInitializing = false;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     // Show loading indicator during initialization
@@ -713,12 +731,27 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
             ),
           ),
           const Spacer(),
+          // Camera Switch Button
+          Container(
+            decoration: BoxDecoration(
+              color: _useESP32Camera ? AppTheme.accentCyan.withOpacity(0.2) : Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: IconButton(
+              icon: Icon(
+                _useESP32Camera ? Icons.wifi : Icons.cameraswitch_outlined,
+                color: _useESP32Camera ? AppTheme.accentCyan : AppTheme.textMuted,
+              ),
+              onPressed: _toggleCameraSource,
+              tooltip: _useESP32Camera ? "Passer au téléphone" : "Passer à l'ESP32",
+            ),
+          ),
           IconButton(
             icon: Icon(
               _isFlashOn ? Icons.flash_on : Icons.flash_off,
-              color: _isFlashOn ? Colors.amber : AppTheme.textMuted,
+              color: (_isFlashOn && !_useESP32Camera) ? Colors.amber : AppTheme.textMuted.withOpacity(0.3),
             ),
-            onPressed: _toggleFlash,
+            onPressed: _useESP32Camera ? null : _toggleFlash,
           ),
         ],
       ),
@@ -1121,28 +1154,43 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       );
     }
     
+    // Check connectivity first
+    if (!_esp32Service.isConnected.value) {
+       _esp32Service.testConnection().then((connected) {
+         if (mounted && !connected) {
+           ScaffoldMessenger.of(context).showSnackBar(
+             const SnackBar(content: Text("ESP32 non connecté. Vérifiez l'adresse IP."))
+           );
+         }
+       });
+    }
+
+    // Use a unique key to force refresh if stream stalls
     return Image.network(
       streamUrl,
+      key: ValueKey("esp32_stream_${DateTime.now().minute}"), // Refresh every minute or on rebuild
+      headers: const {"Connection": "keep-alive"},
+      gaplessPlayback: true,
       fit: BoxFit.cover,
       loadingBuilder: (context, child, loadingProgress) {
         if (loadingProgress == null) return child;
         return Container(
           color: Colors.black,
-          child: const Center(
-            child: CircularProgressIndicator(color: AppTheme.accentCyan),
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const CircularProgressIndicator(color: AppTheme.accentCyan),
+                const SizedBox(height: 10),
+                Text("Connexion au flux...", style: TextStyle(color: Colors.white.withOpacity(0.7))),
+              ],
+            ),
           ),
         );
       },
       errorBuilder: (context, error, stackTrace) {
-        // Fallback to phone camera on error
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
-            setState(() {
-              _useESP32Camera = false;
-            });
-            _initCamera();
-          }
-        });
+        // Retry logic could go here, but for now fallback
+        print("Stream error: $error");
         
         return Container(
           color: Colors.black,
@@ -1150,17 +1198,19 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                const Icon(Icons.broken_image_outlined, size: 48, color: Colors.orange),
                 const SizedBox(height: 12),
                 Text(
-                  'Erreur de connexion ESP32',
+                  'Flux vidéo interrompu',
                   style: AppTheme.bodyMedium.copyWith(color: Colors.white70),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  'Basculement vers caméra téléphone...',
-                  style: AppTheme.bodyMedium.copyWith(color: Colors.white54, fontSize: 12),
-                ),
+                TextButton(
+                  onPressed: () {
+                    // Force rebuild/retry
+                    setState(() {});
+                  },
+                  child: const Text("Réessayer", style: TextStyle(color: AppTheme.accentCyan)),
+                )
               ],
             ),
           ),
