@@ -1,5 +1,5 @@
 import 'dart:ui';
-import 'package:flutter_mjpeg/flutter_mjpeg.dart';
+import '../widgets/mjpeg_widget.dart';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter_tts/flutter_tts.dart';
@@ -653,135 +653,316 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Show loading indicator during initialization
     if (_isInitializing) {
       return Scaffold(
-        body: Container(
-          decoration: const BoxDecoration(gradient: AppTheme.backgroundGradient),
-          child: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const CircularProgressIndicator(color: AppTheme.accentCyan),
-                const SizedBox(height: 20),
-                Text(
-                  'Chargement...',
-                  style: AppTheme.bodyLarge.copyWith(color: AppTheme.textPrimary),
-                ),
-              ],
-            ),
+        backgroundColor: Colors.black,
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const CircularProgressIndicator(color: AppTheme.primaryPurple),
+              const SizedBox(height: 20),
+              Text('Chargement...', style: TextStyle(color: Colors.white.withOpacity(0.7))),
+            ],
           ),
         ),
       );
     }
     
-    // Check if using ESP32 camera or phone camera
+    // Check camera availability
     bool hasCamera = _useESP32Camera || (_controller != null && _controller!.value.isInitialized);
-    
     if (!hasCamera) {
-      return Scaffold(
-        body: Container(
-          decoration: const BoxDecoration(gradient: AppTheme.backgroundGradient),
-          child: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.camera_alt_outlined, size: 64, color: AppTheme.textMuted),
-                const SizedBox(height: 20),
-                Text(
-                  'Caméra non disponible',
-                  style: AppTheme.bodyLarge.copyWith(color: AppTheme.textPrimary),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
+       return const Scaffold(backgroundColor: Colors.black, body: Center(child: Text("Camera Error", style: TextStyle(color: Colors.white))));
     }
-    
+
     bool isFrontCamera = _controller!.description.lensDirection == CameraLensDirection.front;
 
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(gradient: AppTheme.backgroundGradient),
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFF0f172a), Color(0xFF1e1b4b)],
+          ),
+        ),
         child: SafeArea(
           child: Column(
             children: [
-              // Modern Header
-              _buildHeader(),
-              
-              const SizedBox(height: 8),
-              
-              // Language & Mode Selection
-              _buildControls(),
-              
-              const SizedBox(height: 12),
-              
-              // Phrase Display with Glassmorphism
-              _buildPhraseDisplay(),
-              
-              const SizedBox(height: 12),
-              
-              // Camera Preview with Landmarks
+              // 1. Title Header
+              Padding(
+                padding: const EdgeInsets.only(top: 8, bottom: 8),
+                child: ShaderMask(
+                  shaderCallback: (bounds) => const LinearGradient(
+                    colors: [Color(0xFF22d3ee), Color(0xFFc084fc)],
+                  ).createShader(bounds),
+                  child: const Text(
+                    'SignLens',
+                    style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                      letterSpacing: 1.0,
+                    ),
+                  ),
+                ),
+              ),
+
+              // 2. Camera Preview (Expanded)
               Expanded(
-                child: _buildCameraPreview(isFrontCamera),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(24),
+                    child: Stack(
+                      children: [
+                        // Camera Stream
+                        Positioned.fill(
+                           child: _useESP32Camera ? _buildESP32Stream() : CameraPreview(_controller!),
+                        ),
+                        
+                        // Hand Landmarks Overlay
+                        Positioned.fill(
+                          child: ValueListenableBuilder<List<List<double>>>(
+                            valueListenable: _handsNotifier,
+                            builder: (context, currentHands, _) {
+                              if (currentHands.isEmpty) return const SizedBox.shrink();
+                              return CustomPaint(
+                                painter: HandPainter(
+                                  currentHands,
+                                  _controller!.value.previewSize!,
+                                  _sensorRotation,
+                                  isFrontCamera
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+
+                        // Large Glassmorphic Letter Overlay (Bottom Center of Camera)
+                        Align(
+                          alignment: Alignment.bottomCenter,
+                          child: Container(
+                            margin: const EdgeInsets.all(16),
+                            height: 100,
+                            width: double.infinity,
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  const Color(0xFF6366f1).withOpacity(0.3),
+                                  const Color(0xFFa855f7).withOpacity(0.3)
+                                ],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(color: Colors.white.withOpacity(0.2)),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.2),
+                                  blurRadius: 15,
+                                  spreadRadius: 2
+                                )
+                              ],
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(20),
+                              child: BackdropFilter(
+                                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                                child: Center(
+                                  child: ValueListenableBuilder<String>(
+                                    valueListenable: _detectedTextNotifier,
+                                    builder: (context, text, _) {
+                                      return Text(
+                                        text.isEmpty ? "" : text,
+                                        style: const TextStyle(
+                                          fontSize: 60,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.white,
+                                          shadows: [
+                                            Shadow(
+                                              color: Colors.black45,
+                                              offset: Offset(0, 2),
+                                              blurRadius: 4
+                                            )
+                                          ]
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        
+                        // Live Indicator
+                        if (_useESP32Camera)
+                        Positioned(
+                          top: 12, left: 12,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: Colors.black54,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Row(
+                              children: [
+                                BlinkingDot(color: Colors.redAccent),
+                                SizedBox(width: 8),
+                                Text("LIVE", style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold))
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ),
               
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
+
+              // 3. Flags Row
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                   _buildCircleFlag("🇫🇷", "Français"),
+                   _buildCircleFlag("🇬🇧", "Anglais"),
+                   _buildCircleFlag("🇹🇳", "Arabe"),
+                   _buildCircleFlag("🇪🇺", "Europe"),
+                   _buildCircleFlag("🌐", "Auto"),
+                  ],
+                ),
+              ),
               
-              // Bottom Controls
-              _buildBottomControls(),
+              const SizedBox(height: 16),
+
+              // 4. Toggles
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Column(
+                  children: [
+                    _buildToggleRow("Lettre / Mot", currentMode == "MOTS", (val) {
+                       setState(() => currentMode = val ? "MOTS" : "LETTRES");
+                    }),
+                    const SizedBox(height: 8),
+                    _buildToggleRow("Caméra Native / ESP32", _useESP32Camera, (val) {
+                       if (val != _useESP32Camera) {
+                          _toggleCameraSource();
+                       }
+                    }, 
+                    activeColor: AppTheme.accentCyan),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // 5. Bottom Phrase Show
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: Container(
+                  height: 60,
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.white10),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          phrase.isEmpty ? "EN ATTENTE..." : phrase.toUpperCase(),
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.9),
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 1.0,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: phrase.isNotEmpty ? _speak : null,
+                        child: Container(
+                          width: 40, height: 40,
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(colors: [Color(0xFF8b5cf6), Color(0xFF6366f1)]),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(Icons.volume_up, color: Colors.white, size: 20),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              // 6. Action Buttons
+              _buildActionButtons(),
             ],
           ),
         ),
       ),
     );
   }
+  
+  // -- New Helper Widgets --
 
-  Widget _buildHeader() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
-        children: [
-          IconButton(
-            icon: const Icon(Icons.arrow_back, color: AppTheme.textPrimary),
-            onPressed: () => Navigator.pop(context),
+  Widget _buildCircleFlag(String flag, String lang) {
+    bool isSelected = _selectedLanguage == lang;
+    return GestureDetector(
+      onTap: () => _translatePhrase(lang),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        width: 45, height: 45,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: isSelected ? const Color(0xFF3b82f6).withOpacity(0.3) : Colors.white.withOpacity(0.05),
+          border: Border.all(
+            color: isSelected ? const Color(0xFF60a5fa) : Colors.white10,
+            width: isSelected ? 2 : 1
           ),
-          ShaderMask(
-            shaderCallback: (bounds) => AppTheme.primaryGradient.createShader(bounds),
-            child: Text(
-              'Reconnaissance',
-              style: AppTheme.headingMedium.copyWith(
-                fontSize: 22,
-                color: Colors.white,
-              ),
-            ),
-          ),
-          const Spacer(),
-          // Camera Switch Button
-          Container(
-            decoration: BoxDecoration(
-              color: _useESP32Camera ? AppTheme.accentCyan.withOpacity(0.2) : Colors.transparent,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: IconButton(
-              icon: Icon(
-                _useESP32Camera ? Icons.wifi : Icons.cameraswitch_outlined,
-                color: _useESP32Camera ? AppTheme.accentCyan : AppTheme.textMuted,
-              ),
-              onPressed: _toggleCameraSource,
-              tooltip: _useESP32Camera ? "Passer au téléphone" : "Passer à l'ESP32",
-            ),
-          ),
-          IconButton(
-            icon: Icon(
-              _isFlashOn ? Icons.flash_on : Icons.flash_off,
-              color: (_isFlashOn && !_useESP32Camera) ? Colors.amber : AppTheme.textMuted.withOpacity(0.3),
-            ),
-            onPressed: _useESP32Camera ? null : _toggleFlash,
-          ),
-        ],
+          boxShadow: isSelected ? [
+            BoxShadow(color: const Color(0xFF3b82f6).withOpacity(0.4), blurRadius: 10, spreadRadius: 2)
+          ] : [],
+        ),
+        child: Center(
+          child: Text(flag, style: const TextStyle(fontSize: 22)),
+        ),
       ),
+    );
+  }
+
+  Widget _buildToggleRow(String label, bool value, Function(bool) onChanged, {Color activeColor = const Color(0xFF22d3ee)}) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            color: Colors.white.withOpacity(0.7),
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        SizedBox(
+          height: 30,
+          child: Switch(
+            value: value,
+            onChanged: onChanged,
+            activeColor: activeColor,
+            activeTrackColor: activeColor.withOpacity(0.3),
+            inactiveThumbColor: Colors.white60,
+            inactiveTrackColor: Colors.white10,
+          ),
+        ),
+      ],
     );
   }
 
@@ -1209,10 +1390,11 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
 
     // Use a unique key to force refresh if stream stalls
     // Use Mjpeg widget for robust stream handling
-    return Mjpeg(
-      isLive: true,
-      error: (context, error, stack) {
-        print("Stream error: $error");
+    // Use custom MjpegWidget
+    return MjpegWidget(
+      streamUrl: streamUrl,
+      fit: BoxFit.cover,
+      errorBuilder: (context) {
         return Container(
           color: Colors.black,
           child: Center(
@@ -1236,8 +1418,6 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
           ),
         );
       },
-      stream: streamUrl,
-      fit: BoxFit.cover,
     );
   }
 }

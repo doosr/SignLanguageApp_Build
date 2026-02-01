@@ -32,7 +32,6 @@ dependencies:
   speech_to_text: ^7.3.0
   http: ^1.2.0
   web_socket_channel: ^2.4.0
-  flutter_mjpeg: ^1.0.0
   permission_handler: ^11.3.1
   image: ^4.7.2
   url_launcher: ^6.2.5
