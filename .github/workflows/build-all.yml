@@ -121,11 +121,31 @@ jobs:
             ./artifacts/*.apk
             ./artifacts/*.zip
           body: |
-            - 🌍 Multi-language support (French, English, Arabic)
-            - 🎯 Letter and word detection modes
+            ## 🤟 SignLanguage App - Release ${{ github.ref_name }}
             
-            ### 🔧 Installation
-            **Android**: Download APK and install  
-            **Windows**: Extract ZIP and run `flutter_app.exe`
+            ### 📱 Android
+            - **APK** : Installation directe sur téléphone
+            - **Taille** : ~50 MB
+            - **Minimum** : Android 5.0 (API 21)
+            
+            ### 🪟 Windows
+            - **ZIP Portable** : Aucune installation requise
+            - **Taille** : ~30 MB
+            - **Minimum** : Windows 10/11
+            
+            ### ✨ Fonctionnalités
+            - 🔤 Reconnaissance de gestes (lettres + 15 mots)
+            - 💬 Mode inverse (voix → gestes)
+            - 🌍 Support FR/EN/AR
+            - 📡 ESP32-CAM optionnel
+            - 🔒 Traitement on-device (vie privée)
+            
+            ### 📚 Documentation
+            - [Installation](https://github.com/doosr/SignLanguageApp_Build/wiki/Installation)
+            - [Guide utilisateur](https://github.com/doosr/SignLanguageApp_Build/wiki/User-Guide)
+            - [Architecture](https://github.com/doosr/SignLanguageApp_Build/wiki/Architecture)
+            - [FAQ](https://github.com/doosr/SignLanguageApp_Build/wiki/FAQ)
+          draft: false
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
