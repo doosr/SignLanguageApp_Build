@@ -25,6 +25,14 @@ Future<void> main() async {
   // Configure window for desktop platforms (Non-blocking)
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
     // Window size and visibility is handled by C++ runner
+  } else {
+    // Mobile/Android: Initialize cameras
+    try {
+      cameras = await availableCameras();
+      print("📷 Found ${cameras.length} cameras");
+    } catch (e) {
+      print("⚠️ Camera initialization error: $e");
+    }
   }
   
   // Initialize app immediately to avoid white screen

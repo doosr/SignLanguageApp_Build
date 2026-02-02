@@ -186,17 +186,17 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       final prefs = await SharedPreferences.getInstance();
       _selectedLanguage = prefs.getString('language') ?? 'Français';
       
-      // FORCE ESP32 if enabled (User preference overrides connectivity check)
-      // MjpegWidget in _buildESP32Stream will handle loading/reconnecting UI
+      // IMPORTANT: Default to PHONE camera for mobile
+      // Only use ESP32 if explicitly enabled AND connected
+      _useESP32Camera = false;
+      
       if (_esp32Service.isEnabled.value) {
-          // Trigger a background test but don't wait for it to decide UI
-          _esp32Service.testConnection(); 
-          _useESP32Camera = true;
-          print("⚡ Priority to ESP32-CAM (Enabled in settings)");
+        // Test connection in background
+        _esp32Service.testConnection();
+        print("⚡ ESP32 enabled, testing connection...");
       } else {
-          _useESP32Camera = false;
+        print("📱 Using phone camera (ESP32 disabled)");
       }
-      // Old logic removed: _useESP32Camera = _esp32Service.isEnabled.value && _esp32Service.isConnected.value;
       
       // Request permissions
       _requestPermissions();
