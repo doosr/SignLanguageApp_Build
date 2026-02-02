@@ -555,6 +555,9 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       // We use a high threshold to ensure "Very Precise" detection as requested.
       // Python logic matches: High prob + repetition
       
+      String label = _labelsWords[maxIdx];
+      _wordCandidateHistory.add(label);
+
       if (_wordCandidateHistory.length > 10) _wordCandidateHistory.removeAt(0);
       
       int freq = _wordCandidateHistory.where((e) => e == label).length;
