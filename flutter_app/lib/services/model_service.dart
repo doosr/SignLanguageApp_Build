@@ -21,46 +21,35 @@ class ModelService {
   bool get areModelsLoaded => interpreterLetters != null && interpreterWords != null;
 
   Future<void> initialize() async {
-    _lettersModelPath = await _copyAssetToFile('assets/model_letters.tflite', 'model_letters.tflite');
-    _wordsModelPath = await _copyAssetToFile('assets/model_words_lstm.tflite', 'model_words_lstm.tflite');
+    // We only MUST copy the hand_landmarker.task because the plugin needs a physical path
     _handLandmarkerPath = await _copyAssetToFile('assets/hand_landmarker.task', 'hand_landmarker.task');
     
-    // Auto-load into memory if not already done
+    // Auto-load Interpreters directly from assets (Faster, cleaner)
     if (!areModelsLoaded) {
        await loadInterpreters();
     }
   }
   
   Future<void> loadInterpreters() async {
-    if (areModelsLoaded) return; // Skip if already active
+    if (areModelsLoaded) return;
     
-    print("🧠 Loading models into memory...");
+    print("🧠 Loading models from Assets...");
     
     try {
-      // 1. Letters
-      if (_lettersModelPath != null && await File(_lettersModelPath!).exists()) {
-        interpreterLetters = Interpreter.fromFile(File(_lettersModelPath!));
-      } else {
-        interpreterLetters = await Interpreter.fromAsset('assets/model_letters.tflite');
-      }
+      // Load directly from assets using tflite_flutter's optimized method
+      interpreterLetters = await Interpreter.fromAsset('assets/model_letters.tflite');
+      interpreterWords = await Interpreter.fromAsset('assets/model_words_lstm.tflite');
       
-      // 2. Words (LSTM)
-      if (_wordsModelPath != null && await File(_wordsModelPath!).exists()) {
-        interpreterWords = Interpreter.fromFile(File(_wordsModelPath!));
-      } else {
-        interpreterWords = await Interpreter.fromAsset('assets/model_words_lstm.tflite');
-      }
-      
-      // 3. Labels
+      // Load labels
       String l1 = await rootBundle.loadString('assets/model_letters_labels.txt');
       labelsLetters = l1.split('\n').where((s) => s.isNotEmpty).toList();
       
       String l2 = await rootBundle.loadString('assets/model_words_labels.txt');
       labelsWords = l2.split('\n').where((s) => s.isNotEmpty).toList();
       
-      print("🧠 Models loaded in RAM!");
+      print("🧠 Models loaded successfully!");
     } catch (e) {
-      print("❌ Model MEMORY load failed: $e");
+      print("❌ Model load failed: $e");
     }
   }
 

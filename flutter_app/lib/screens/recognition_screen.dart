@@ -81,6 +81,7 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
   Interpreter? _interpreterWords;
   final ValueNotifier<List<List<double>>> _handsNotifier = ValueNotifier([]);
   final ValueNotifier<String> _detectedTextNotifier = ValueNotifier("En attente...");
+  final ValueNotifier<String> _debugConfidenceNotifier = ValueNotifier("");
 
   // Translation Data
   final Map<String, Map<String, String>> _translationsLetters = {
@@ -452,9 +453,12 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       return xa.compareTo(xb);
     });
 
-    // 2. Extract and compensate landmarks for aspect ratio (Normalize to Square space)
-    // We assume training was on 4:3 or 1:1. Phones are 9:16.
-    // If width < height (portrait), we scale Y by aspectRatio to preserve 1:1 mapping
+    // 2. Extract and compensate landmarks for aspect ratio
+    // Target: 4:3 aspect ratio (1.333) which is common for PC training.
+    // multiplier = (Target Inverse AR) / (Actual Inverse AR) 
+    // Simplified: multiplier = TargetAR / ActualAR = 1.333 / aspectRatio
+    final double targetARMultiplier = 1.3333 / aspectRatio;
+    
     List<List<double>> compensatedHands = [];
     double minX = double.infinity;
     double minY = double.infinity;
@@ -466,10 +470,8 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
         double x = raw[i];
         double y = raw[i+1];
         
-        // COMPENSATE: Make it relative to a square coordinate system
-        // If image is W=720, H=1280, Y values go further than X.
-        // Scaling Y down by (720/1280) makes the hand 'square' again.
-        double cy = y * (1.0 / aspectRatio);
+        // COMPENSATE: Target 4:3 vertical space
+        double cy = y * targetARMultiplier;
         
         if (x < minX) minX = x;
         if (cy < minY) minY = cy;
@@ -527,8 +529,14 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       }
     }
 
+    // UPDATE UI WITH RAW CONFIDENCE (even if low)
+    if (mounted) {
+      // Small label to show what it thinks right now
+      _debugConfidenceNotifier.value = "Top: ${_labelsLetters[maxIdx]} (${(maxProb * 100).toStringAsFixed(0)}%)";
+    }
+
     // ADVANCED DEBUG LOGGING
-    if (_frameCounter % 20 == 0) {
+    if (_frameCounter % 15 == 0) {
       // Find top 3 candidates
       List<MapEntry<int, double>> topScores = [];
       for (int i = 0; i < output[0].length; i++) {
@@ -572,30 +580,46 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
     // Need full sequence for word detection
     if (_sequenceBuffer.length == _sequenceLength) {
       // LSTM INPUT: [Batch, Time, Features] -> [1, 15, 84]
-      // Do NOT flatten. Pass the sequence directly.
-      var input = [_sequenceBuffer]; 
+      var input = List.generate(1, (i) => _sequenceBuffer); 
       
-      // Output: [Batch, NumClasses] -> [1, N] (Probabilities)
-      var output = List.filled(1, List.filled(_labelsWords.length, 0.0));
+      // Output: [Batch, NumClasses] -> [1, N]
+      var output = List.generate(1, (i) => List.filled(_labelsWords.length, 0.0));
       
       try {
         _interpreterWords!.run(input, output);
       } catch (e) {
-        print("Inference error: $e");
+        print("❌ LSTM Inference error: $e");
         return;
       }
 
       int maxIdx = 0;
       double maxProb = -1.0;
-      
-      // DEBUG PRINT ENABLED:
-      print("🧠 LSTM Output: ${output[0]}"); 
-
       for (int i = 0; i < output[0].length; i++) {
         if (output[0][i] > maxProb) {
           maxProb = output[0][i];
           maxIdx = i;
         }
+      }
+
+      if (mounted) {
+        _debugConfidenceNotifier.value = "Top: ${_labelsWords[maxIdx]} (${(maxProb * 100).toStringAsFixed(0)}%)";
+      }
+
+      // ADVANCED DEBUG LOGGING
+      if (_frameCounter % 15 == 0) {
+        List<MapEntry<int, double>> topScores = [];
+        for (int i = 0; i < output[0].length; i++) {
+          topScores.add(MapEntry(i, (output[0][i] as num).toDouble()));
+        }
+        topScores.sort((a, b) => b.value.compareTo(a.value));
+        
+        String debugMsg = "🔍 WORD PREDICTION: ";
+        for (int i = 0; i < 3 && i < topScores.length; i++) {
+          String l = _labelsWords[topScores[i].key];
+          double prob = topScores[i].value;
+          debugMsg += "$l(${prob.toStringAsFixed(2)}) ";
+        }
+        print(debugMsg);
       }
       
       print("🔎 Top Candidate: ${_labelsWords[maxIdx]} ($maxProb)");
@@ -929,6 +953,28 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
                                 Text("LIVE", style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold))
                               ],
                             ),
+                          ),
+                        ),
+
+                        // DEBUG CONFIDENCE OVERLAY
+                        Positioned(
+                          bottom: 12, right: 12,
+                          child: ValueListenableBuilder<String>(
+                            valueListenable: _debugConfidenceNotifier,
+                            builder: (context, confidence, _) {
+                              if (confidence.isEmpty) return SizedBox.shrink();
+                              return Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.black45,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  confidence,
+                                  style: TextStyle(color: Colors.white70, fontSize: 12, fontFamily: 'monospace'),
+                                ),
+                              );
+                            },
                           ),
                         ),
                       ],
