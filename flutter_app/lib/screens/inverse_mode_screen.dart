@@ -160,15 +160,24 @@ class _InverseModeScreenState extends State<InverseModeScreen> with TickerProvid
   }
   
   void _startNewPhrase() {
-    // Reset text but keep listening
+    // Reset text and animation
     setState(() {
       _recognizedText = '';
       _currentLetterIndex = 0;
     });
     _animationTimer?.cancel();
     
-    // Start listening if not already
-    if (!_isListening) {
+    // If already listening, stop and restart for a truly fresh start
+    if (_isListening) {
+      _speech.stop();
+      // Brief delay to allow speech engine to reset completely
+      Future.delayed(const Duration(milliseconds: 250), () {
+        if (mounted) {
+          setState(() => _isListening = false); // Visually reset
+          _toggleListening(); // Restarts properly
+        }
+      });
+    } else {
       _toggleListening();
     }
   }
@@ -292,7 +301,8 @@ class _InverseModeScreenState extends State<InverseModeScreen> with TickerProvid
                   
                   // Microphone Button
                   GestureDetector(
-                    onTap: _toggleListening,
+                    onTap: _startNewPhrase,
+                    onDoubleTap: _stopListening,
                     child: AnimatedBuilder(
                       animation: _pulseController,
                       builder: (context, child) {
