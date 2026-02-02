@@ -37,24 +37,36 @@ class ModelService {
     
     try {
       // 1. TFLite Models: Load directly from Asset Bundle
-      // This complies with "Do not save in local storage" for inference models
+      print("  🔹 Loading interpreterLetters...");
       interpreterLetters = await Interpreter.fromAsset('assets/model_letters.tflite');
+      print("  ✅ interpreterLetters loaded.");
+
+      print("  🔹 Loading interpreterWords...");
       interpreterWords = await Interpreter.fromAsset('assets/model_words_lstm.tflite');
+      print("  ✅ interpreterWords loaded.");
       
-      // 2. Hand Landmarker Task: MUST be a file path for the specific C++ plugin
-      // We copy it to a TEMP file every time we launch.
+      // 2. Hand Landmarker Task
+      print("  🔹 Copying hand_landmarker.task...");
       _handLandmarkerPath = await _copyAssetToFile('assets/hand_landmarker.task', 'hand_landmarker.task');
+      print("  ✅ hand_landmarker.task path: $_handLandmarkerPath");
 
       // Load labels
+      print("  🔹 Loading labelsLetters...");
       String l1 = await rootBundle.loadString('assets/model_letters_labels.txt');
-      labelsLetters = l1.split('\n').where((s) => s.isNotEmpty).toList();
+      labelsLetters = l1.split('\n').where((s) => s.isNotEmpty).map((s) => s.trim()).toList();
+      print("  ✅ Loaded ${labelsLetters.length} letter labels.");
       
+      print("  🔹 Loading labelsWords...");
       String l2 = await rootBundle.loadString('assets/model_words_labels.txt');
-      labelsWords = l2.split('\n').where((s) => s.isNotEmpty).toList();
+      labelsWords = l2.split('\n').where((s) => s.isNotEmpty).map((s) => s.trim()).toList();
+      print("  ✅ Loaded ${labelsWords.length} word labels.");
       
-      print("🧠 Models loaded successfully!");
-    } catch (e) {
+      print("🧠 ALL models and labels loaded successfully!");
+    } catch (e, stack) {
       print("❌ Model load failed: $e");
+      print("StackTrace: $stack");
+      interpreterLetters = null;
+      interpreterWords = null;
     }
   }
 
