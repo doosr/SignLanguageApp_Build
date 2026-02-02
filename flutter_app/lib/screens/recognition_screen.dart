@@ -514,9 +514,18 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       return;
     }
     
+    if (_labelsLetters.isEmpty) {
+      print("❌ Labels list is EMPTY! Aborting inference.");
+      return;
+    }
+
     var input = [features];
-    var output = List.filled(1, List.filled(_labelsLetters.length, 0.0));
+    // Explicitly create growable list for inner list to be safe, though filled should work if length > 0
+    var output = List.filled(1, List.filled(_labelsLetters.length, 0.0).toList());
     
+    // DEBUG: Check shapes
+    // print("🔍 Input shape: [1, ${features.length}] - Output shape: [1, ${_labelsLetters.length}]");
+
     try {
       _interpreterLetters!.run(input, output);
     } catch (e) {
