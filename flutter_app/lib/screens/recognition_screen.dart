@@ -404,8 +404,15 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
           if (rawHandsData.isNotEmpty) {
             _missedFrameCounter = 0; // Reset counter on detection
 
+            // Pass preview size for aspect ratio compensation
+            final previewSize = _controller!.value.previewSize;
+            final double aspectRatio = (previewSize != null) ? previewSize.width / previewSize.height : 1.0;
+
             // Run heavy normalization in Isolate using Spatial Sorting
-            final features = await compute(_processHandLandmarksSpatial, rawHandsData);
+            final features = await compute(_processHandLandmarksSpatial, {
+              'hands': rawHandsData,
+              'aspectRatio': aspectRatio,
+            });
             
             if (currentMode == "LETTRES") {
                _runInferenceLetters(features);
@@ -428,54 +435,67 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
      }
   }
 
-  // UPDATED ISOLATE FUNCTION: Spatial Sorting AND Relative Normalization
-  static List<double> _processHandLandmarksSpatial(List<Map<String, dynamic>> handsData) {
+  static List<double> _processHandLandmarksSpatial(Map<String, dynamic> data) {
+    final List<Map<String, dynamic>> handsData = (data['hands'] as List).cast<Map<String, dynamic>>();
+    final double aspectRatio = data['aspectRatio'] as double? ?? 1.0;
+
     if (handsData.isEmpty) return List.filled(84, 0.0);
 
     List<double> getLandmarks(Map<String, dynamic> hand) {
       return (hand['landmarks'] as List).cast<double>();
     }
 
-    // 1. Sort hands left-to-right
+    // 1. Sort hands left-to-right (using the first landmark of each hand)
     handsData.sort((a, b) {
       double xa = getLandmarks(a)[0];
       double xb = getLandmarks(b)[0];
       return xa.compareTo(xb);
     });
 
-    // 2. Calculate MinX and MinY across ALL detected landmarks (Global bounding box for the frame)
+    // 2. Extract and compensate landmarks for aspect ratio (Normalize to Square space)
+    // We assume training was on 4:3 or 1:1. Phones are 9:16.
+    // If width < height (portrait), we scale Y by aspectRatio to preserve 1:1 mapping
+    List<List<double>> compensatedHands = [];
     double minX = double.infinity;
     double minY = double.infinity;
 
-    for (var hand in handsData) {
-      List<double> lm = getLandmarks(hand);
-      for (int i = 0; i < lm.length; i += 2) {
-        if (lm[i] < minX) minX = lm[i];
-        if (lm[i+1] < minY) minY = lm[i+1];
+    for (var handData in handsData) {
+      List<double> raw = getLandmarks(handData);
+      List<double> compensated = [];
+      for (int i = 0; i < raw.length; i += 2) {
+        double x = raw[i];
+        double y = raw[i+1];
+        
+        // COMPENSATE: Make it relative to a square coordinate system
+        // If image is W=720, H=1280, Y values go further than X.
+        // Scaling Y down by (720/1280) makes the hand 'square' again.
+        double cy = y * (1.0 / aspectRatio);
+        
+        if (x < minX) minX = x;
+        if (cy < minY) minY = cy;
+        
+        compensated.add(x);
+        compensated.add(cy);
       }
+      compensatedHands.add(compensated);
     }
 
-    // 3. Normalize relative to minX, minY
-    List<double> normalizeHand(List<double> landmarks) {
-      List<double> normalized = [];
-      for (int i = 0; i < landmarks.length; i += 2) {
-        normalized.add(landmarks[i] - minX);
-        normalized.add(landmarks[i+1] - minY);
-      }
-      return normalized;
-    }
-
+    // 3. Final normalization relative to global bounding box
     List<double> features = [];
+    
+    void addNormalizedHand(List<double> landmarks) {
+      for (int i = 0; i < landmarks.length; i += 2) {
+        features.add(landmarks[i] - minX);
+        features.add(landmarks[i+1] - minY);
+      }
+    }
 
-    // SINGLE HAND CASE
-    if (handsData.length == 1) {
-       features.addAll(normalizeHand(getLandmarks(handsData[0]))); // Slot 1
-       features.addAll(List.filled(42, 0.0));      // Slot 2 (Padding)
-    } 
-    // TWO HANDS CASE
-    else {
-       features.addAll(normalizeHand(getLandmarks(handsData[0]))); // Slot 1
-       features.addAll(normalizeHand(getLandmarks(handsData[1]))); // Slot 2
+    if (compensatedHands.length == 1) {
+      addNormalizedHand(compensatedHands[0]);
+      features.addAll(List.filled(42, 0.0)); // Padding
+    } else {
+      addNormalizedHand(compensatedHands[0]);
+      addNormalizedHand(compensatedHands[1]);
     }
 
     return features;
@@ -507,9 +527,22 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       }
     }
 
-    // DEBUG: Print every 30 frames
-    if (_frameCounter % 30 == 0) {
-      print("🔍 LETTERS: Top=${_labelsLetters[maxIdx]} Prob=${maxProb.toStringAsFixed(2)}");
+    // ADVANCED DEBUG LOGGING
+    if (_frameCounter % 20 == 0) {
+      // Find top 3 candidates
+      List<MapEntry<int, double>> topScores = [];
+      for (int i = 0; i < output[0].length; i++) {
+        topScores.add(MapEntry(i, output[0][i]));
+      }
+      topScores.sort((a, b) => b.value.compareTo(a.value));
+      
+      String debugMsg = "🔍 PREDICTION: ";
+      for (int i = 0; i < 3 && i < topScores.length; i++) {
+        String label = _labelsLetters[topScores[i].key];
+        double prob = topScores[i].value;
+        debugMsg += "$label(${prob.toStringAsFixed(2)}) ";
+      }
+      print(debugMsg);
     }
 
     // LOWERED threshold for testing (was 0.5)
