@@ -453,33 +453,31 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       return xa.compareTo(xb);
     });
 
-    // 2. Extract and compensate landmarks for aspect ratio
-    // Target: 4:3 aspect ratio (1.333) which is common for PC training.
-    // multiplier = (Target Inverse AR) / (Actual Inverse AR) 
-    // Simplified: multiplier = TargetAR / ActualAR = 1.333 / aspectRatio
-    final double targetARMultiplier = 1.3333 / aspectRatio;
+    // 2. Extract landmarks (Sync with Python: No Aspect Ratio Compensation)
+    // Python script performs simple x-min, y-min normalization. 
+    // We must match that exactly.
     
-    List<List<double>> compensatedHands = [];
+    List<List<double>> processedHandsData = [];
     double minX = double.infinity;
     double minY = double.infinity;
 
     for (var handData in handsData) {
       List<double> raw = getLandmarks(handData);
-      List<double> compensated = [];
+      List<double> handPoints = [];
       for (int i = 0; i < raw.length; i += 2) {
         double x = raw[i];
         double y = raw[i+1];
         
-        // COMPENSATE: Target 4:3 vertical space
-        double cy = y * targetARMultiplier;
+        // NO AR COMPENSATION to match Python training
+        // double cy = y * targetARMultiplier; 
         
         if (x < minX) minX = x;
-        if (cy < minY) minY = cy;
+        if (y < minY) minY = y;
         
-        compensated.add(x);
-        compensated.add(cy);
+        handPoints.add(x);
+        handPoints.add(y);
       }
-      compensatedHands.add(compensated);
+      processedHandsData.add(handPoints);
     }
 
     // 3. Final normalization relative to global bounding box
@@ -492,12 +490,17 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       }
     }
 
-    if (compensatedHands.length == 1) {
-      addNormalizedHand(compensatedHands[0]);
+    if (processedHandsData.length == 1) {
+      addNormalizedHand(processedHandsData[0]);
       features.addAll(List.filled(42, 0.0)); // Padding
     } else {
-      addNormalizedHand(compensatedHands[0]);
-      addNormalizedHand(compensatedHands[1]);
+      addNormalizedHand(processedHandsData[0]);
+      addNormalizedHand(processedHandsData[1]);
+    }
+
+    // DEBUG: Print first few features to verify values are in expected range [0.0 - 1.0]
+    if (features.isNotEmpty) {
+      // print("🐛 Features[0..4]: ${features.sublist(0, 5)}");
     }
 
     return features;

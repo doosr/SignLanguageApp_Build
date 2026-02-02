@@ -36,9 +36,14 @@ class ModelService {
     print("🧠 Loading models from Assets...");
     
     try {
-      // Load directly from assets using tflite_flutter's optimized method
-      interpreterLetters = await Interpreter.fromAsset('assets/model_letters.tflite');
-      interpreterWords = await Interpreter.fromAsset('assets/model_words_lstm.tflite');
+      // Load models from files (copied from assets)
+      // This ensures they are readable even if compressed in the APK
+      _lettersModelPath = await _copyAssetToFile('assets/model_letters.tflite', 'model_letters.tflite');
+      _wordsModelPath = await _copyAssetToFile('assets/model_words_lstm.tflite', 'model_words_lstm.tflite');
+      _handLandmarkerPath = await _copyAssetToFile('assets/hand_landmarker.task', 'hand_landmarker.task');
+
+      interpreterLetters = Interpreter.fromFile(File(_lettersModelPath!));
+      interpreterWords = Interpreter.fromFile(File(_wordsModelPath!));
       
       // Load labels
       String l1 = await rootBundle.loadString('assets/model_letters_labels.txt');
