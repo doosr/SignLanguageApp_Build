@@ -22,7 +22,7 @@ class ModelService {
 
   Future<void> initialize() async {
     _lettersModelPath = await _copyAssetToFile('assets/model_letters.tflite', 'model_letters.tflite');
-    _wordsModelPath = await _copyAssetToFile('assets/model_words_lstm.tflite', 'model_words_lstm.tflite');
+    _wordsModelPath = await _copyAssetToFile('assets/model_words.tflite', 'model_words.tflite');
     _handLandmarkerPath = await _copyAssetToFile('assets/hand_landmarker.task', 'hand_landmarker.task');
     
     // Auto-load into memory if not already done
@@ -44,11 +44,11 @@ class ModelService {
         interpreterLetters = await Interpreter.fromAsset('assets/model_letters.tflite');
       }
       
-      // 2. Words (LSTM)
+      // 2. Words
       if (_wordsModelPath != null && await File(_wordsModelPath!).exists()) {
         interpreterWords = Interpreter.fromFile(File(_wordsModelPath!));
       } else {
-        interpreterWords = await Interpreter.fromAsset('assets/model_words_lstm.tflite');
+        interpreterWords = await Interpreter.fromAsset('assets/model_words.tflite');
       }
       
       // 3. Labels
@@ -61,10 +61,6 @@ class ModelService {
       print("🧠 Models loaded in RAM!");
     } catch (e) {
       print("❌ Model MEMORY load failed: $e");
-      // Add more specific debugging info
-      if (e is FileSystemException) {
-        print("📁 File system error. Path: ${e.path}, Msg: ${e.message}");
-      }
     }
   }
 
