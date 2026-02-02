@@ -1,6 +1,6 @@
 import 'dart:io';
 import 'package:flutter/services.dart';
-import 'package:path_provider/path_provider.dart'; // Still needed for getTemporaryDirectory
+import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import 'package:tflite_flutter/tflite_flutter.dart'; // Import required for Interpreter
 
@@ -21,70 +21,70 @@ class ModelService {
   bool get areModelsLoaded => interpreterLetters != null && interpreterWords != null;
 
   Future<void> initialize() async {
-    // We only MUST copy the hand_landmarker.task because the plugin needs a physical path
+    _lettersModelPath = await _copyAssetToFile('assets/model_letters.tflite', 'model_letters.tflite');
+    _wordsModelPath = await _copyAssetToFile('assets/model_words_lstm.tflite', 'model_words_lstm.tflite');
     _handLandmarkerPath = await _copyAssetToFile('assets/hand_landmarker.task', 'hand_landmarker.task');
     
-    // Auto-load Interpreters directly from assets (Faster, cleaner)
+    // Auto-load into memory if not already done
     if (!areModelsLoaded) {
        await loadInterpreters();
     }
   }
   
   Future<void> loadInterpreters() async {
-    if (areModelsLoaded) return;
+    if (areModelsLoaded) return; // Skip if already active
     
-    print("🧠 Loading models DIRECTLY from Assets...");
+    print("🧠 Loading models into memory...");
     
     try {
-      // 1. TFLite Models: Load directly from Asset Bundle
-      print("  🔹 Loading interpreterLetters...");
-      interpreterLetters = await Interpreter.fromAsset('assets/model_letters.tflite');
-      print("  ✅ interpreterLetters loaded.");
-
-      print("  🔹 Loading interpreterWords...");
-      interpreterWords = await Interpreter.fromAsset('assets/model_words_lstm.tflite');
-      print("  ✅ interpreterWords loaded.");
+      // 1. Letters
+      if (_lettersModelPath != null && await File(_lettersModelPath!).exists()) {
+        interpreterLetters = Interpreter.fromFile(File(_lettersModelPath!));
+      } else {
+        interpreterLetters = await Interpreter.fromAsset('assets/model_letters.tflite');
+      }
       
-      // 2. Hand Landmarker Task
-      print("  🔹 Copying hand_landmarker.task...");
-      _handLandmarkerPath = await _copyAssetToFile('assets/hand_landmarker.task', 'hand_landmarker.task');
-      print("  ✅ hand_landmarker.task path: $_handLandmarkerPath");
-
-      // Load labels
-      print("  🔹 Loading labelsLetters...");
+      // 2. Words (LSTM)
+      if (_wordsModelPath != null && await File(_wordsModelPath!).exists()) {
+        interpreterWords = Interpreter.fromFile(File(_wordsModelPath!));
+      } else {
+        interpreterWords = await Interpreter.fromAsset('assets/model_words_lstm.tflite');
+      }
+      
+      // 3. Labels
       String l1 = await rootBundle.loadString('assets/model_letters_labels.txt');
-      labelsLetters = l1.split('\n').where((s) => s.isNotEmpty).map((s) => s.trim()).toList();
-      print("  ✅ Loaded ${labelsLetters.length} letter labels.");
+      labelsLetters = l1.split('\n').where((s) => s.isNotEmpty).toList();
       
-      print("  🔹 Loading labelsWords...");
       String l2 = await rootBundle.loadString('assets/model_words_labels.txt');
-      labelsWords = l2.split('\n').where((s) => s.isNotEmpty).map((s) => s.trim()).toList();
-      print("  ✅ Loaded ${labelsWords.length} word labels.");
+      labelsWords = l2.split('\n').where((s) => s.isNotEmpty).toList();
       
-      print("🧠 ALL models and labels loaded successfully!");
-    } catch (e, stack) {
-      print("❌ Model load failed: $e");
-      print("StackTrace: $stack");
-      interpreterLetters = null;
-      interpreterWords = null;
+      print("🧠 Models loaded in RAM!");
+    } catch (e) {
+      print("❌ Model MEMORY load failed: $e");
     }
   }
 
   Future<String> _copyAssetToFile(String assetPath, String filename) async {
-    // Start fresh every time - NO CACHING as requested
-    final appDir = await getTemporaryDirectory(); // Use temp dir so it doesn't persist forever
+    final appDir = await getApplicationDocumentsDirectory();
     final file = File(path.join(appDir.path, filename));
 
+    // Check if file already exists
+    if (await file.exists()) {
+      // Optional: Check file size or version if needed to re-copy updates
+      // For now, we assume if it exists, it's good (as per user request: "already saved for next launch")
+      return file.path;
+    }
+
+    // Copy from assets
     try {
-      if (await file.exists()) {
-        await file.delete();
-      }
-      
       final byteData = await rootBundle.load(assetPath);
       await file.writeAsBytes(byteData.buffer.asUint8List());
+      print("📦 Copied $assetPath to ${file.path}");
       return file.path;
     } catch (e) {
       print("❌ Error copying asset $assetPath: $e");
+      // Fallback to asset path if copy fails? 
+      // Actually, if copy fails, we might return null or original asset string depending on usage
       throw Exception("Failed to copy model asset: $e");
     }
   }
