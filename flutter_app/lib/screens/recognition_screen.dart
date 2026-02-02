@@ -242,6 +242,8 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
     try {
       final modelService = ModelService();
       
+      print("📦 Starting model initialization...");
+      
       // Ensure assets are copied to storage
       await modelService.initialize();
       
@@ -259,7 +261,12 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       _labelsLetters = modelService.labelsLetters;
       _labelsWords = modelService.labelsWords;
       
+      // VERIFY models loaded
       print("✅ Models ready!");
+      print("   Letters interpreter: ${_interpreterLetters != null ? 'OK' : 'NULL'}");
+      print("   Words interpreter: ${_interpreterWords != null ? 'OK' : 'NULL'}");
+      print("   Letters labels: ${_labelsLetters.length} classes");
+      print("   Words labels: ${_labelsWords.length} classes");
     } catch (e) {
       print("❌ Error loading models: $e");
     }
@@ -476,7 +483,10 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
 
 
   void _runInferenceLetters(List<double> features) {
-    if (_interpreterLetters == null) return;
+    if (_interpreterLetters == null) {
+      print("❌ Interpreter letters is NULL!");
+      return;
+    }
     
     var input = [features];
     var output = List.filled(1, List.filled(_labelsLetters.length, 0.0));
@@ -497,8 +507,13 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       }
     }
 
-    // MATCH PYTHON: 0.4 threshold (using 0.5 for slightly safer margin)
-    if (maxProb > 0.5) { 
+    // DEBUG: Print every 30 frames
+    if (_frameCounter % 30 == 0) {
+      print("🔍 LETTERS: Top=${_labelsLetters[maxIdx]} Prob=${maxProb.toStringAsFixed(2)}");
+    }
+
+    // LOWERED threshold for testing (was 0.5)
+    if (maxProb > 0.3) { 
       String label = _labelsLetters[maxIdx];
       
       _letterBuffer.add(label);
@@ -506,6 +521,7 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
 
       int count = _letterBuffer.where((e) => e == label).length;
       if (count >= 3 && detectedText != label) { // 3/5 consistency
+        print("✅ DETECTED LETTER: $label ($maxProb)");
         _onGestureDetected(label);
       }
     } else if (maxProb < 0.2) {
