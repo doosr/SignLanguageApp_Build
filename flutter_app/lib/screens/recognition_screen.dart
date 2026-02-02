@@ -543,7 +543,7 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
     }
 
     // UPDATE UI WITH RAW CONFIDENCE (even if low)
-    if (mounted) {
+    if (mounted && _labelsLetters.isNotEmpty) {
       // FORCE DEBUG DISPLAY
       _debugConfidenceNotifier.value = "${_labelsLetters[maxIdx]} ${(maxProb * 100).toStringAsFixed(1)}%";
       
@@ -626,7 +626,7 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
         }
       }
 
-      if (mounted) {
+      if (mounted && _labelsWords.isNotEmpty) {
         _debugConfidenceNotifier.value = "${_labelsWords[maxIdx]} ${(maxProb * 100).toStringAsFixed(1)}%";
          setState(() {
              _debugInfo = "LSTM: ${_labelsWords[maxIdx]} ${(maxProb * 100).toStringAsFixed(1)}%";
