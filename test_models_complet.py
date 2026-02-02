@@ -14,11 +14,12 @@ Contrôles:
 
 import cv2
 import numpy as np
-import tensorflow as tf
-import mediapipe as mp
-import time
 import os
 import sys
+import time
+import tensorflow as tf
+import tensorflow.lite # FIX: Explicit import required
+import mediapipe as mp
 
 # =========================
 # CONFIGURATION
@@ -107,12 +108,12 @@ try:
     
 except Exception as e:
     print(f"❌ Erreur de chargement des modèles: {e}")
+    print(f"   Type: {type(e)}")
+    import traceback
+    traceback.print_exc()
     print("\n💡 SOLUTION:")
-    print("   Le modèle LSTM nécessite TensorFlow complet (pas tensorflow-lite)")
-    print("   Commandes:")
-    print("   pip uninstall tensorflow-lite")
-    print("   pip install tensorflow==2.14.0")
-    print("\n   Ou utilisez: python test_letters_only.py (lettres seulement)")
+    print("   Vérifiez que TensorFlow 2.14+ est bien installé")
+    print("   python -c \"import tensorflow as tf; print(tf.__version__)\"")
     sys.exit(1)
 
 # =========================

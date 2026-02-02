@@ -7,9 +7,11 @@ Test rapide du modèle de lettres uniquement (pas de LSTM)
 import cv2
 import numpy as np
 import tensorflow as tf
-import mediapipe as mp
+import tensorflow.lite # FIX: Explicit import required
 import time
 import os
+import sys
+import mediapipe as mp
 
 # Configuration
 MODEL_PATH = 'flutter_app/assets/model_letters.tflite'
@@ -35,14 +37,20 @@ print(f"   Input: {input_details[0]['shape']}")
 print(f"   Output: {output_details[0]['shape']}")
 
 # MediaPipe - Compatible with different versions
+import mediapipe as mp
+
 try:
     from mediapipe.python.solutions import hands as mp_hands
     from mediapipe.python.solutions import drawing_utils as mp_drawing
     from mediapipe.python.solutions import drawing_styles as mp_drawing_styles
-except ImportError:
+    from mediapipe.python.solutions import hands as mp_hands_module
+    HAND_CONNECTIONS = mp_hands_module.HAND_CONNECTIONS
+except (ImportError, AttributeError):
+    # Fallback for older versions
     mp_hands = mp.solutions.hands
     mp_drawing = mp.solutions.drawing_utils
     mp_drawing_styles = mp.solutions.drawing_styles
+    HAND_CONNECTIONS = mp_hands.HAND_CONNECTIONS
 
 hands = mp_hands.Hands(
     static_image_mode=False,
@@ -78,12 +86,12 @@ while cap.isOpened():
         for hand_landmarks in sorted_hands:
             try:
                 mp_drawing.draw_landmarks(
-                    image, hand_landmarks, mp_hands.HAND_CONNECTIONS,
+                    image, hand_landmarks, HAND_CONNECTIONS,
                     mp_drawing_styles.get_default_hand_landmarks_style(),
                     mp_drawing_styles.get_default_hand_connections_style()
                 )
             except:
-                mp_drawing.draw_landmarks(image, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+                mp_drawing.draw_landmarks(image, hand_landmarks, HAND_CONNECTIONS)
             for lm in hand_landmarks.landmark:
                 x_.append(lm.x)
                 y_.append(lm.y)

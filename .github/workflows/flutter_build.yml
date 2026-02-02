@@ -1,10 +1,11 @@
-name: Build Flutter APK
+name: Flutter Build APK
 
 on:
   push:
     branches: [ "main", "master" ]
   pull_request:
     branches: [ "main", "master" ]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -13,25 +14,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Java
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
 
-      - name: Set up Flutter
+      - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: '3.19.0'
           channel: 'stable'
 
-
-      - name: Get Dependencies
+      - name: Install Dependencies
         working-directory: ./flutter_app
         run: flutter pub get
-
-      - name: Generate Icons
-        working-directory: ./flutter_app
-        run: dart run flutter_launcher_icons
 
       - name: Build APK
         working-directory: ./flutter_app
@@ -42,4 +39,3 @@ jobs:
         with:
           name: app-release
           path: flutter_app/build/app/outputs/flutter-apk/app-release.apk
-

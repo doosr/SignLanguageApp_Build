@@ -1,6 +1,6 @@
 import 'dart:io';
 import 'package:flutter/services.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:path_provider/path_provider.dart'; // Still needed for getTemporaryDirectory
 import 'package:path/path.dart' as path;
 import 'package:tflite_flutter/tflite_flutter.dart'; // Import required for Interpreter
 
@@ -33,18 +33,18 @@ class ModelService {
   Future<void> loadInterpreters() async {
     if (areModelsLoaded) return;
     
-    print("🧠 Loading models from Assets...");
+    print("🧠 Loading models DIRECTLY from Assets...");
     
     try {
-      // Load models from files (copied from assets)
-      // This ensures they are readable even if compressed in the APK
-      _lettersModelPath = await _copyAssetToFile('assets/model_letters.tflite', 'model_letters.tflite');
-      _wordsModelPath = await _copyAssetToFile('assets/model_words_lstm.tflite', 'model_words_lstm.tflite');
+      // 1. TFLite Models: Load directly from Asset Bundle
+      // This complies with "Do not save in local storage" for inference models
+      interpreterLetters = await Interpreter.fromAsset('assets/model_letters.tflite');
+      interpreterWords = await Interpreter.fromAsset('assets/model_words_lstm.tflite');
+      
+      // 2. Hand Landmarker Task: MUST be a file path for the specific C++ plugin
+      // We copy it to a TEMP file every time we launch.
       _handLandmarkerPath = await _copyAssetToFile('assets/hand_landmarker.task', 'hand_landmarker.task');
 
-      interpreterLetters = Interpreter.fromFile(File(_lettersModelPath!));
-      interpreterWords = Interpreter.fromFile(File(_wordsModelPath!));
-      
       // Load labels
       String l1 = await rootBundle.loadString('assets/model_letters_labels.txt');
       labelsLetters = l1.split('\n').where((s) => s.isNotEmpty).toList();
@@ -59,30 +59,17 @@ class ModelService {
   }
 
   Future<String> _copyAssetToFile(String assetPath, String filename) async {
-    final appDir = await getApplicationDocumentsDirectory();
+    // Start fresh every time - NO CACHING as requested
+    final appDir = await getTemporaryDirectory(); // Use temp dir so it doesn't persist forever
     final file = File(path.join(appDir.path, filename));
 
-    // PERFORMANCE OPTIMIZATION: Use cached file if it already exists
-    // Only copy on FIRST LAUNCH or if file is corrupted
-    if (await file.exists()) {
-      final fileSize = await file.length();
-      // Validate file is not corrupted (basic check)
-      if (fileSize > 1000) { // Models should be > 1KB
-        print("⚡ Using cached model: ${file.path} (${fileSize} bytes)");
-        return file.path;
-      } else {
-        print("⚠️ Cached file corrupted, re-copying...");
+    try {
+      if (await file.exists()) {
         await file.delete();
       }
-    }
-
-    // Copy from assets (FIRST LAUNCH only)
-    try {
-      print("📦 First launch: Copying $assetPath to local storage...");
+      
       final byteData = await rootBundle.load(assetPath);
       await file.writeAsBytes(byteData.buffer.asUint8List());
-      final size = await file.length();
-      print("✅ Cached $filename ($size bytes) - Future launches will be faster!");
       return file.path;
     } catch (e) {
       print("❌ Error copying asset $assetPath: $e");

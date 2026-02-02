@@ -44,6 +44,7 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
   
   // State
   String detectedText = "En attente...";
+  String _debugInfo = ""; // New debug info field
   String phrase = "";
   String currentMode = "LETTRES"; 
   String? _pendingWord;
@@ -534,8 +535,16 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
 
     // UPDATE UI WITH RAW CONFIDENCE (even if low)
     if (mounted) {
-      // Small label to show what it thinks right now
-      _debugConfidenceNotifier.value = "Top: ${_labelsLetters[maxIdx]} (${(maxProb * 100).toStringAsFixed(0)}%)";
+      // FORCE DEBUG DISPLAY
+      _debugConfidenceNotifier.value = "${_labelsLetters[maxIdx]} ${(maxProb * 100).toStringAsFixed(1)}%";
+      
+      setState(() {
+         if (maxProb < 0.3) {
+           _debugInfo = "Low Conf: ${_labelsLetters[maxIdx]} ${(maxProb * 100).toStringAsFixed(1)}%";
+         } else {
+           _debugInfo = "";
+         }
+      });
     }
 
     // ADVANCED DEBUG LOGGING
@@ -605,7 +614,10 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       }
 
       if (mounted) {
-        _debugConfidenceNotifier.value = "Top: ${_labelsWords[maxIdx]} (${(maxProb * 100).toStringAsFixed(0)}%)";
+        _debugConfidenceNotifier.value = "${_labelsWords[maxIdx]} ${(maxProb * 100).toStringAsFixed(1)}%";
+         setState(() {
+             _debugInfo = "LSTM: ${_labelsWords[maxIdx]} ${(maxProb * 100).toStringAsFixed(1)}%";
+         });
       }
 
       // ADVANCED DEBUG LOGGING
@@ -801,6 +813,63 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
               const SizedBox(height: 20),
               Text('Chargement...', style: TextStyle(color: Colors.white.withOpacity(0.7))),
             ],
+          ),
+        ),
+      );
+    }
+    
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+         children: [
+            // Camera Layer
+            Positioned.fill(
+              child: _useESP32Camera 
+                  ? MjpegWidget(
+                      streamUrl: _esp32Service.streamUrl, 
+                      isLandscape: false,
+                    )
+                  : (_controller != null && _controller!.value.isInitialized)
+                      ? CameraPreview(_controller!)
+                      : Container(color: Colors.black),
+            ),
+            
+            // Hand Landmarks Layer
+            Positioned.fill(
+               child: CustomPaint(
+                 painter: HandPainter(
+                    handsNotifier: _handsNotifier,
+                    sensorRotation: _sensorRotation,
+                    lensDirection: _controller?.description.lensDirection ?? CameraLensDirection.front,
+                 ),
+               ),
+            ),
+
+            // DEBUG OVERLAY (Top Center)
+            Positioned(
+              top: 50,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: ValueListenableBuilder<String>(
+                    valueListenable: _debugConfidenceNotifier,
+                    builder: (ctx, val, child) {
+                      return Text(
+                        "RAW: $val", 
+                        style: const TextStyle(color: Colors.yellowAccent, fontSize: 14, fontWeight: FontWeight.bold),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ),
+
           ),
         ),
       );
