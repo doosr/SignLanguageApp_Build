@@ -51,6 +51,7 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
   int _sensorRotation = 0;
   bool _isInitializing = true;
   bool _useESP32Camera = false; 
+  bool _mirrorLandmarks = true; // Mirror for front camera
   
   // Buffers
   final List<String> _letterBuffer = [];
@@ -77,10 +78,9 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
   List<String> _wordCandidateHistory = [];
 
   // Interpreters and ValueNotifiers
-  Interpreter? _interpreterLetters;
-  Interpreter? _interpreterWords;
-  final ValueNotifier<List<List<double>>> _handsNotifier = ValueNotifier([]);
   final ValueNotifier<String> _detectedTextNotifier = ValueNotifier("En attente...");
+  final ValueNotifier<String> _debugInfoNotifier = ValueNotifier("Initializing...");
+  final ValueNotifier<double> _confidenceNotifier = ValueNotifier(0.0);
 
   // Translation Data
   final Map<String, Map<String, String>> _translationsLetters = {
@@ -328,9 +328,9 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
                  finalY = 1.0 - py;
                }
 
-               if (isFrontCamera) {
-                 finalX = 1.0 - finalX;
-               }
+                if (_mirrorLandmarks) {
+                  finalX = 1.0 - finalX;
+                }
                
                normalizedLandmarks.add(finalX);
                normalizedLandmarks.add(finalY);
@@ -372,7 +372,6 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
      }
   }
 
-  // UPDATED ISOLATE FUNCTION: Spatial Sorting (Left->Right)
   static List<double> _processHandLandmarksSpatial(List<Map<String, dynamic>> handsData) {
     if (handsData.isEmpty) return List.filled(84, 0.0);
 
@@ -380,89 +379,49 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       return (hand['landmarks'] as List).cast<double>();
     }
 
-    // Sort hands left-to-right based on first landmark X
+    // 1. Sort hands left-to-right based on first landmark X
     handsData.sort((a, b) {
       double xa = getLandmarks(a)[0];
       double xb = getLandmarks(b)[0];
       return xa.compareTo(xb);
     });
 
+    // 2. Calculate MinX and MinY across ALL detected landmarks (Global bounding box)
+    double minX = double.infinity;
+    double minY = double.infinity;
+
+    for (var hand in handsData) {
+      List<double> lm = getLandmarks(hand);
+      for (int i = 0; i < lm.length; i += 2) {
+        if (lm[i] < minX) minX = lm[i];
+        if (lm[i+1] < minY) minY = lm[i+1];
+      }
+    }
+
+    // 3. Normalize relative to minX, minY helper
+    List<double> normalizeHand(List<double> landmarks) {
+      List<double> normalized = [];
+      for (int i = 0; i < landmarks.length; i += 2) {
+        normalized.add(landmarks[i] - minX);
+        normalized.add(landmarks[i+1] - minY);
+      }
+      return normalized;
+    }
+
     List<double> features = [];
 
-    // SINGLE HAND CASE:
-    // If only 1 hand is detected, we put it in the first slot (0-41)
-    // and zero-pad the second slot (42-83).
-    // This matches the Python training where single-hand samples are usually stored in the first block.
-    // LIMITATION: If the user uses their Right hand, and it's the only hand, it goes to Slot 1.
-    // If the model expects Right Hand in Slot 2, this fails. 
-    // BUT since we can't determine chirality without 'label', we assume consistency.
-    
+    // SINGLE HAND CASE
     if (handsData.length == 1) {
-       features.addAll(getLandmarks(handsData[0])); // Slot 1
-       features.addAll(List.filled(42, 0.0));      // Slot 2
-    } else {
-       // TWO HANDS: Slot 1 = Leftmost, Slot 2 = Rightmost
-       // Take max 2 hands
-       for (var hand in handsData.take(2)) {
-         features.addAll(getLandmarks(hand));
-       }
+       features.addAll(normalizeHand(getLandmarks(handsData[0]))); // Slot 1
+       features.addAll(List.filled(42, 0.0));      // Slot 2 (Padding)
+    } 
+    // TWO HANDS CASE
+    else {
+       features.addAll(normalizeHand(getLandmarks(handsData[0]))); // Slot 1
+       features.addAll(normalizeHand(getLandmarks(handsData[1]))); // Slot 2
     }
-    
-    // Safety padding if < 84 (should unlikely happen with logic above)
-    while (features.length < 84) features.add(0.0);
 
-    // Normalization (Min-Max Shift)
-    // We normalize the whole set relative to the bounding box of ALL hands
-    List<double> allXs = [];
-    List<double> allYs = [];
-    
-    for (int i = 0; i < features.length; i += 2) {
-       // Only count non-zero landmarks (simple heuristic, or verify if handsData used padding)
-       // Actually, we should collect min/max from original hands, not the padded-with-zeros vector
-       // But wait... features contains 0.0 for missing hand. 0.0 is a valid coordinate? 
-       // No, valid coordinates are usually > 0 if normalized?
-       // Let's iterate original handsData for normalization stats
-    }
-    
-    allXs.clear(); allYs.clear();
-    for (var hand in handsData) {
-       List<double> lm = getLandmarks(hand);
-       for (int i = 0; i < lm.length; i+=2) {
-          allXs.add(lm[i]);
-          allYs.add(lm[i+1]);
-       }
-    }
-    
-    if (allXs.isEmpty) return List.filled(84, 0.0);
-
-    double min_X = allXs.reduce((curr, next) => curr < next ? curr : next);
-    double min_Y = allYs.reduce((curr, next) => curr < next ? curr : next);
-
-    // Apply normalization to the FEATURES vector
-    // We only normalize the NON-ZERO parts (the actual hands)
-    // If we simply subtract min_X from 0.0 (padding), we get negative values.
-    // So we should rebuild features properly.
-    
-    List<double> normalizedFeatures = [];
-    
-    if (handsData.length == 1) {
-       List<double> h1 = getLandmarks(handsData[0]);
-       for (int i=0; i<h1.length; i+=2) {
-          normalizedFeatures.add(h1[i] - min_X);
-          normalizedFeatures.add(h1[i+1] - min_Y);
-       }
-       normalizedFeatures.addAll(List.filled(42, 0.0));
-    } else {
-       for (var hand in handsData.take(2)) {
-          List<double> h = getLandmarks(hand);
-          for (int i=0; i<h.length; i+=2) {
-             normalizedFeatures.add(h[i] - min_X);
-             normalizedFeatures.add(h[i+1] - min_Y);
-          }
-       }
-    }
-    
-    return normalizedFeatures;
+    return features;
   }
 
   void _runInferenceLetters(List<double> features) {
@@ -490,6 +449,8 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
     // MATCH PYTHON: 0.4 threshold (using 0.5 for slightly safer margin)
     if (maxProb > 0.5) { 
       String label = _labelsLetters[maxIdx];
+      _debugInfoNotifier.value = "Letter: $label (${(maxProb * 100).toStringAsFixed(1)}%)";
+      _confidenceNotifier.value = maxProb;
       
       _letterBuffer.add(label);
       if (_letterBuffer.length > 5) _letterBuffer.removeAt(0);
@@ -512,11 +473,16 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
 
     // Need full sequence for word detection
     if (_sequenceBuffer.length == _sequenceLength) {
-      // Flatten: [ [84], [84]... ] -> [ 84*15 ]
-      var flattenedSequence = _sequenceBuffer.expand((f) => f).toList();
-      var input = [flattenedSequence];
+      // LSTM INPUT: [Batch, Time, Features] -> [1, 15, 84]
+      var input = [_sequenceBuffer]; 
       var output = List.filled(1, List.filled(_labelsWords.length, 0.0));
-      _interpreterWords!.run(input, output);
+      
+      try {
+        _interpreterWords!.run(input, output);
+      } catch (e) {
+        print("Inference error: $e");
+        return;
+      }
 
       int maxIdx = 0;
       double maxProb = -1.0;
@@ -534,15 +500,15 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       // Python: History 10, Freq >= 5, Prob > 0.15
       
       String label = _labelsWords[maxIdx];
+      _debugInfoNotifier.value = "Word: $label (${(maxProb * 100).toStringAsFixed(1)}%)";
+      _confidenceNotifier.value = maxProb;
       
       _wordCandidateHistory.add(label);
       if (_wordCandidateHistory.length > 10) _wordCandidateHistory.removeAt(0);
       
       int freq = _wordCandidateHistory.where((e) => e == label).length;
       
-      // Threshold: 0.15 (Python) -> Using 0.3 for safety
-      // Threshold: Lowered to 0.25/4 for better responsiveness
-      if (maxProb > 0.25 && freq >= 4) {
+      if (maxProb > 0.4 && freq >= 6) {
          // Anti-spam handled in _onGestureDetected with timeout
          _onGestureDetected(label);
          
@@ -845,6 +811,35 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
                             ),
                           ),
                         ),
+
+                        // TOP DEBUG OVERLAY
+                        Positioned(
+                          top: 50, left: 16, right: 16,
+                          child: ValueListenableBuilder<String>(
+                            valueListenable: _debugInfoNotifier,
+                            builder: (context, info, _) {
+                              return Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: Colors.black54,
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(color: Colors.white24),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.bug_report, size: 14, color: Colors.orangeAccent),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      info,
+                                      style: const TextStyle(color: Colors.white70, fontSize: 11, fontFamily: 'monospace'),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }
+                          ),
+                        ),
                         
                         // Live Indicator
                         if (_useESP32Camera)
@@ -905,6 +900,11 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
                        }
                     }, 
                     activeColor: AppTheme.accentCyan),
+                    const SizedBox(height: 8),
+                    _buildToggleRow("Miroir Landmarks", _mirrorLandmarks, (val) {
+                       setState(() => _mirrorLandmarks = val);
+                    }, 
+                    activeColor: Colors.pinkAccent),
                   ],
                 ),
               ),
