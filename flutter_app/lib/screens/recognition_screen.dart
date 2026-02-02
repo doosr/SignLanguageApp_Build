@@ -341,100 +341,91 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
 
   int _missedFrameCounter = 0; // Persistence for word buffer
 
-  void _processCameraImage(CameraImage image) async {
-    if (_isDetecting || _plugin == null) return;
+  void _processCameraImage(CameraImage image) {
+    if (_isDetecting || !mounted || _plugin == null) return;
     
     _frameCounter++;
-    // OPTIMIZATION: Process every 2nd frame for faster tracking
+    // OPTIMIZATION: Process every 2nd frame for better stability on lower-end devices
     if (_frameCounter % 2 != 0) return; 
     
     _isDetecting = true;
     
-    try {
-       final hands = _plugin!.detect(image, _controller!.description.sensorOrientation);
-       
-       if (mounted) {
-          _sensorRotation = _controller!.description.sensorOrientation;
-          bool isFrontCamera = _controller!.description.lensDirection == CameraLensDirection.front;
+    // Decouple camera callback from processing to avoid timeouts
+    Future.microtask(() async {
+      try {
+        if (!mounted || _plugin == null || _controller == null || !_controller!.value.isInitialized) return;
+        
+        final hands = _plugin!.detect(image, _controller!.description.sensorOrientation);
+        
+        if (mounted) {
+           _sensorRotation = _controller!.description.sensorOrientation;
+           bool isFrontCamera = _controller!.description.lensDirection == CameraLensDirection.front;
 
-          List<Map<String, dynamic>> rawHandsData = [];
-          
-          List<List<double>> uiHands = []; // For drawing
+           List<Map<String, dynamic>> rawHandsData = [];
+           List<List<double>> uiHands = []; // For drawing
 
-          // OPTIMIZATION: Rotation flags
-          bool rotate90 = _sensorRotation == 90;
-          bool rotate270 = _sensorRotation == 270;
-          bool rotate180 = _sensorRotation == 180;
-          
-          for (var hand in hands) {
-            List<double> normalizedLandmarks = [];
-            for (var landmark in hand.landmarks) {
-               double px = landmark.x;
-               double py = landmark.y;
-               
-               double finalX = px;
-               double finalY = py;
-               
-               if (rotate90) {
-                 finalX = 1.0 - py;
-                 finalY = px;
-               } else if (rotate270) {
-                 finalX = py;
-                 finalY = 1.0 - px;
-               } else if (rotate180) {
-                 finalX = 1.0 - px;
-                 finalY = 1.0 - py;
-               }
+           for (var hand in hands) {
+             List<double> normalizedLandmarks = [];
+             for (var landmark in hand.landmarks) {
+                double px = landmark.x;
+                double py = landmark.y;
+                
+                double finalX = px;
+                double finalY = py;
+                
+                // Rotation handling
+                if (_sensorRotation == 90) {
+                  finalX = 1.0 - py;
+                  finalY = px;
+                } else if (_sensorRotation == 270) {
+                  finalX = py;
+                  finalY = 1.0 - px;
+                } else if (_sensorRotation == 180) {
+                  finalX = 1.0 - px;
+                  finalY = 1.0 - py;
+                }
 
-               if (isFrontCamera) {
-                 finalX = 1.0 - finalX;
-               }
-               
-               normalizedLandmarks.add(finalX);
-               normalizedLandmarks.add(finalY);
-            }
-            uiHands.add(normalizedLandmarks);
+                if (isFrontCamera) finalX = 1.0 - finalX;
+                
+                normalizedLandmarks.add(finalX);
+                normalizedLandmarks.add(finalY);
+             }
+             uiHands.add(normalizedLandmarks);
+             rawHandsData.add({'landmarks': normalizedLandmarks});
+           }
             
-            // Reverted to raw data passing (no label)
-            rawHandsData.add({
-              'landmarks': normalizedLandmarks,
-            });
-          }
-           
-          _handsNotifier.value = uiHands;
+           _handsNotifier.value = uiHands;
 
-          if (rawHandsData.isNotEmpty) {
-            _missedFrameCounter = 0; // Reset counter on detection
+           if (rawHandsData.isNotEmpty) {
+             _missedFrameCounter = 0;
+             final previewSize = _controller!.value.previewSize;
+             final double aspectRatio = (previewSize != null) ? previewSize.width / previewSize.height : 1.0;
 
-            // Pass preview size for aspect ratio compensation
-            final previewSize = _controller!.value.previewSize;
-            final double aspectRatio = (previewSize != null) ? previewSize.width / previewSize.height : 1.0;
-
-            // Run heavy normalization in Isolate using Spatial Sorting
-            final features = await compute(_processHandLandmarksSpatial, {
-              'hands': rawHandsData,
-              'aspectRatio': aspectRatio,
-            });
-            
-            if (currentMode == "LETTRES") {
-               _runInferenceLetters(features);
-            } else {
-               _runInferenceWords(features);
-            }
-          } else {
-            // "Grace Period" logic: Don't clear immediately
-            _missedFrameCounter++;
-            if (_missedFrameCounter > 5) { // ~300ms grace period
-               _detectedTextNotifier.value = "En attente...";
-               _sequenceBuffer.clear();
-            }
-          }
-        }
-     } catch (e) {
-       print("Vision error: $e");
-     } finally { 
-       _isDetecting = false;
-     }
+             // Logic normalization in isolate
+             final features = await compute(_processHandLandmarksSpatial, {
+               'hands': rawHandsData,
+               'aspectRatio': aspectRatio,
+             });
+             
+             if (currentMode == "LETTRES") {
+                _runInferenceLetters(features);
+             } else {
+                _runInferenceWords(features);
+             }
+           } else {
+             _missedFrameCounter++;
+             if (_missedFrameCounter > 5) {
+                _detectedTextNotifier.value = "En attente...";
+                _sequenceBuffer.clear();
+             }
+           }
+         }
+      } catch (e) {
+        print("Vision error: $e");
+      } finally { 
+        _isDetecting = false;
+      }
+    });
   }
 
   static List<double> _processHandLandmarksSpatial(Map<String, dynamic> data) {
