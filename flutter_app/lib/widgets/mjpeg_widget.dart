@@ -11,6 +11,7 @@ class MjpegWidget extends StatefulWidget {
   final Widget? loadingWidget;
   final Map<String, String>? headers;
   final bool isLive; 
+  final Function(Uint8List)? onFrame;
 
   const MjpegWidget({
     Key? key,
@@ -20,6 +21,7 @@ class MjpegWidget extends StatefulWidget {
     this.loadingWidget,
     this.headers,
     this.isLive = true,
+    this.onFrame,
   }) : super(key: key);
 
   @override
@@ -145,6 +147,9 @@ class _MjpegWidgetState extends State<MjpegWidget> {
                      _imageBytes = jpegData;
                      _hasError = false;
                   });
+                  if (widget.onFrame != null) {
+                    widget.onFrame!(jpegData);
+                  }
                 }
               } catch (e) { }
               

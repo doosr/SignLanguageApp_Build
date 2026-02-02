@@ -61,6 +61,10 @@ class ModelService {
       print("🧠 Models loaded in RAM!");
     } catch (e) {
       print("❌ Model MEMORY load failed: $e");
+      // Add more specific debugging info
+      if (e is FileSystemException) {
+        print("📁 File system error. Path: ${e.path}, Msg: ${e.message}");
+      }
     }
   }
 

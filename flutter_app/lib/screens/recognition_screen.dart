@@ -51,6 +51,7 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
   int _sensorRotation = 0;
   bool _isInitializing = true;
   bool _useESP32Camera = false; 
+  bool _mirrorLandmarks = true; // Default for front camera
   
   // Buffers
   final List<String> _letterBuffer = [];
@@ -79,8 +80,9 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
   // Interpreters and ValueNotifiers
   Interpreter? _interpreterLetters;
   Interpreter? _interpreterWords;
-  final ValueNotifier<List<List<double>>> _handsNotifier = ValueNotifier([]);
   final ValueNotifier<String> _detectedTextNotifier = ValueNotifier("En attente...");
+  final ValueNotifier<String> _debugInfoNotifier = ValueNotifier("Initializing...");
+  final ValueNotifier<double> _confidenceNotifier = ValueNotifier(0.0);
 
   // Translation Data
   final Map<String, Map<String, String>> _translationsLetters = {
@@ -372,7 +374,7 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
                  finalY = 1.0 - py;
                }
 
-               if (isFrontCamera) {
+               if (_mirrorLandmarks) {
                  finalX = 1.0 - finalX;
                }
                
@@ -493,6 +495,8 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
 
     if (maxProb > 0.5) { 
       String label = _labelsLetters[maxIdx];
+      _debugInfoNotifier.value = "Letter: $label (${(maxProb * 100).toStringAsFixed(1)}%)";
+      _confidenceNotifier.value = maxProb;
       
       _letterBuffer.add(label);
       if (_letterBuffer.length > 5) _letterBuffer.removeAt(0);
@@ -538,6 +542,8 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       }
       
       String label = _labelsWords[maxIdx];
+      _debugInfoNotifier.value = "Word: $label (${(maxProb * 100).toStringAsFixed(1)}%)";
+      _confidenceNotifier.value = maxProb;
       
       _wordCandidateHistory.add(label);
       if (_wordCandidateHistory.length > 10) _wordCandidateHistory.removeAt(0);
@@ -755,8 +761,9 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
                     child: Stack(
                       children: [
                         // Camera Stream
-                        Positioned.fill(
-                           child: _useESP32Camera ? _buildESP32Stream() : CameraPreview(_controller!),
+                           child: _useESP32Camera 
+                             ? _buildESP32Stream() 
+                             : CameraPreview(_controller!),
                         ),
                         
                         // Hand Landmarks Overlay
@@ -837,8 +844,35 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
                             ),
                           ),
                         ),
-                        
-                        // Live Indicator
+
+                        // TOP DEBUG OVERLAY
+                        Positioned(
+                          top: 50, left: 16, right: 16,
+                          child: ValueListenableBuilder<String>(
+                            valueListenable: _debugInfoNotifier,
+                            builder: (context, info, _) {
+                              return Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: Colors.black54,
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(color: Colors.white24),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.bug_report, size: 14, color: Colors.orangeAccent),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      info,
+                                      style: const TextStyle(color: Colors.white70, fontSize: 11, fontFamily: 'monospace'),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }
+                          ),
+                        ),
                         if (_useESP32Camera)
                         Positioned(
                           top: 12, left: 12,
@@ -927,12 +961,17 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
                        setState(() => currentMode = val ? "MOTS" : "LETTRES");
                     }),
                     const SizedBox(height: 8),
-                    _buildToggleRow("Caméra Native / ESP32", _useESP32Camera, (val) {
+                     _buildToggleRow("Caméra Native / ESP32", _useESP32Camera, (val) {
                        if (val != _useESP32Camera) {
                           _toggleCameraSource();
                        }
                     }, 
                     activeColor: AppTheme.accentCyan),
+                    const SizedBox(height: 8),
+                    _buildToggleRow("Miroir Landmarks", _mirrorLandmarks, (val) {
+                       setState(() => _mirrorLandmarks = val);
+                    }, 
+                    activeColor: Colors.pinkAccent),
                   ],
                 ),
               ),
@@ -1106,6 +1145,7 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
     return MjpegWidget(
       streamUrl: streamUrl,
       fit: BoxFit.cover,
+      onFrame: _processESP32Frame,
       errorBuilder: (context) {
         return Container(
           color: Colors.black,
@@ -1131,5 +1171,19 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
         );
       },
     );
+  }
+
+  void _processESP32Frame(Uint8List jpegBytes) {
+    if (_isDetecting || !mounted || _plugin == null) return;
+    
+    _frameCounter++;
+    if (_frameCounter % 3 != 0) return; // ESP32 is usually 10-15fps, process every 3rd
+    
+    _isDetecting = true;
+    
+    // In a real app, we'd decode JPEG to CameraImage or use plugin.detectImage if available
+    // For now, we note that ESP32 detection is a FUTURE target or REQUIRES plugin documentation
+    _isDetecting = false; 
+    _debugInfoNotifier.value = "ESP32 Frame Rx (${jpegBytes.length} bytes)";
   }
 }
