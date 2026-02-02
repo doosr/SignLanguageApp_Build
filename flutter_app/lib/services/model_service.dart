@@ -68,24 +68,30 @@ class ModelService {
     final appDir = await getApplicationDocumentsDirectory();
     final file = File(path.join(appDir.path, filename));
 
-    // Check if file already exists
+    // PERFORMANCE OPTIMIZATION: Use cached file if it already exists
+    // Only copy on FIRST LAUNCH or if file is corrupted
     if (await file.exists()) {
-      // FORCE OVERWRITE: ensure we always have the latest model from assets
-      // This fixes the issue where app uses old cached models after an update
-      await file.delete(); 
-      print("♻️ Deleting old cached model: ${file.path}");
+      final fileSize = await file.length();
+      // Validate file is not corrupted (basic check)
+      if (fileSize > 1000) { // Models should be > 1KB
+        print("⚡ Using cached model: ${file.path} (${fileSize} bytes)");
+        return file.path;
+      } else {
+        print("⚠️ Cached file corrupted, re-copying...");
+        await file.delete();
+      }
     }
 
-    // Copy from assets
+    // Copy from assets (FIRST LAUNCH only)
     try {
+      print("📦 First launch: Copying $assetPath to local storage...");
       final byteData = await rootBundle.load(assetPath);
       await file.writeAsBytes(byteData.buffer.asUint8List());
-      print("📦 Copied $assetPath to ${file.path}");
+      final size = await file.length();
+      print("✅ Cached $filename ($size bytes) - Future launches will be faster!");
       return file.path;
     } catch (e) {
       print("❌ Error copying asset $assetPath: $e");
-      // Fallback to asset path if copy fails? 
-      // Actually, if copy fails, we might return null or original asset string depending on usage
       throw Exception("Failed to copy model asset: $e");
     }
   }

@@ -75,5 +75,6 @@ flutter {
 }
 
 dependencies {
-
+    // Required for model_words_lstm.tflite which uses TensorFlow Flex ops
+    implementation 'org.tensorflow:tensorflow-lite-select-tf-ops:2.14.0'
 }

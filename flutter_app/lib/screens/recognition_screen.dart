@@ -736,7 +736,8 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
        return const Scaffold(backgroundColor: Colors.black, body: Center(child: Text("Camera Error", style: TextStyle(color: Colors.white))));
     }
 
-    bool isFrontCamera = _controller!.description.lensDirection == CameraLensDirection.front;
+    // Only access controller if using phone camera
+    bool isFrontCamera = _useESP32Camera ? false : (_controller!.description.lensDirection == CameraLensDirection.front);
 
     return Scaffold(
       body: Container(
@@ -782,25 +783,26 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
                            child: _useESP32Camera ? _buildESP32Stream() : CameraPreview(_controller!),
                         ),
                         
-                        // Hand Landmarks Overlay
-                        Positioned.fill(
-                          child: ValueListenableBuilder<List<List<double>>>(
-                            valueListenable: _handsNotifier,
-                            builder: (context, currentHands, _) {
-                              if (currentHands.isEmpty) return const SizedBox.shrink();
-                              return RepaintBoundary(
-                                child: CustomPaint(
-                                  painter: HandPainter(
-                                    currentHands,
-                                    _controller!.value.previewSize!,
-                                    _sensorRotation,
-                                    isFrontCamera
+                        // Hand Landmarks Overlay (Only for phone camera)
+                        if (!_useESP32Camera && _controller != null)
+                          Positioned.fill(
+                            child: ValueListenableBuilder<List<List<double>>>(
+                              valueListenable: _handsNotifier,
+                              builder: (context, currentHands, _) {
+                                if (currentHands.isEmpty) return const SizedBox.shrink();
+                                return RepaintBoundary(
+                                  child: CustomPaint(
+                                    painter: HandPainter(
+                                      currentHands,
+                                      _controller!.value.previewSize!,
+                                      _sensorRotation,
+                                      isFrontCamera
+                                    ),
                                   ),
-                                ),
-                              );
-                            },
+                                );
+                              },
+                            ),
                           ),
-                        ),
 
                         // Large Glassmorphic Letter Overlay (Bottom Center of Camera)
                         Align(

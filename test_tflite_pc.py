@@ -6,7 +6,7 @@ import time
 
 # --- Config ---
 MODEL_LETTERS_PATH = 'flutter_app/assets/model_letters.tflite'
-MODEL_WORDS_PATH = 'flutter_app/assets/model_words.tflite'
+MODEL_WORDS_PATH = 'flutter_app/assets/model_words_lstm.tflite'  # LSTM Model
 LABELS_LETTERS_PATH = 'flutter_app/assets/model_letters_labels.txt'
 LABELS_WORDS_PATH = 'flutter_app/assets/model_words_labels.txt'
 
@@ -147,12 +147,8 @@ while cap.isOpened():
                     sequence_buffer.pop(0)
                 
                 if len(sequence_buffer) == SEQUENCE_LENGTH:
-                    # Flatten sequence: (1, 1260) -> 15 * 84 = 1260
-                    flattened = []
-                    for frame in sequence_buffer:
-                        flattened.extend(frame)
-                    
-                    input_data = np.array([flattened], dtype=np.float32)
+                    # LSTM expects 3D input: [batch, timesteps, features] -> [1, 15, 84]
+                    input_data = np.array([sequence_buffer], dtype=np.float32)
                     interpreter_words.set_tensor(input_details_words[0]['index'], input_data)
                     interpreter_words.invoke()
                     output_data = interpreter_words.get_tensor(output_details_words[0]['index'])
@@ -160,7 +156,7 @@ while cap.isOpened():
                     idx = np.argmax(output_data[0])
                     prob = output_data[0][idx]
                     
-                    if prob > 0.8:
+                    if prob > 0.85:  # Higher threshold for LSTM
                         predicted_text = labels_words[idx]
                         accuracy = prob
                         sequence_buffer = [] # Reset buffer after detection
