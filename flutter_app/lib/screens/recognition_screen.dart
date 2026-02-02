@@ -599,12 +599,16 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
     if (_sequenceBuffer.length > _sequenceLength) _sequenceBuffer.removeAt(0);
 
     // Need full sequence for word detection
-    if (_sequenceBuffer.length == _sequenceLength) {
+      if (_labelsWords.isEmpty) {
+        print("❌ Labels (words) list is EMPTY! Aborting LSTM inference.");
+        return;
+      }
+
       // LSTM INPUT: [Batch, Time, Features] -> [1, 15, 84]
       var input = List.generate(1, (i) => _sequenceBuffer); 
       
       // Output: [Batch, NumClasses] -> [1, N]
-      var output = List.generate(1, (i) => List.filled(_labelsWords.length, 0.0));
+      var output = List.generate(1, (i) => List.filled(_labelsWords.length, 0.0).toList());
       
       try {
         _interpreterWords!.run(input, output);
@@ -660,9 +664,9 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       int freq = _wordCandidateHistory.where((e) => e == label).length;
       
       // PRECISE MODEL THRESHOLDS:
-      // Prob > 0.85 (High confidence)
-      // Freq >= 6 (Stable for ~300ms)
-      if (maxProb > 0.85 && freq >= 6) {
+      // Prob > 0.70 (Balanced confidence)
+      // Freq >= 3 (Responsive for ~150ms)
+      if (maxProb > 0.70 && freq >= 3) {
          _onGestureDetected(label);
          
          // Clear buffer to prevent double triggers for the same gesture instance
