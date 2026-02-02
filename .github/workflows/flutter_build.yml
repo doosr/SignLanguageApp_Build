@@ -1,16 +1,12 @@
-name: Flutter Build APK
+name: Flutter Multi-Platform Build (Manual)
 
 on:
-  push:
-    branches: [ "main", "master" ]
-  pull_request:
-    branches: [ "main", "master" ]
   workflow_dispatch:
 
 jobs:
-  build:
+  build-android:
+    name: Build Android APK
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
 
@@ -36,22 +32,81 @@ jobs:
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: app-release
+          name: app-release-apk
           path: flutter_app/build/app/outputs/flutter-apk/app-release.apk
+
+  build-ios:
+    name: Build iOS IPA (Unsigned)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Enable iOS
+        working-directory: ./flutter_app
+        run: flutter config --enable-ios
+
+      - name: Install Dependencies
+        working-directory: ./flutter_app
+        run: flutter pub get
+
+      - name: Create iOS folders if needed
+        working-directory: ./flutter_app
+        run: flutter create --platforms=ios .
+
+      - name: Build iOS (No Codesign)
+        working-directory: ./flutter_app
+        run: flutter build ios --release --no-codesign
+
+      - name: Create IPA archive (unsigned)
+        shell: bash
+        run: |
+          cd flutter_app/build/ios/iphoneos
+          mkdir -p Payload
+          cp -r Runner.app Payload/
+          zip -r SignLanguageApp-iOS-Unsigned.ipa Payload
+
+      - name: Upload iOS IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-ipa
+          path: flutter_app/build/ios/iphoneos/SignLanguageApp-iOS-Unsigned.ipa
+
+  create-release:
+    name: Create GitHub Release
+    needs: [build-android, build-ios]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Android APK
+        uses: actions/download-artifact@v4
+        with:
+          name: app-release-apk
+          path: bin
+
+      - name: Download iOS IPA
+        uses: actions/download-artifact@v4
+        with:
+          name: app-release-ipa
+          path: bin
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
-        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         with:
           tag_name: latest
-          name: "Dernière Version (Build Auto)"
+          name: "Vérsion Manuelle (Build Auto)"
           body: |
-            ### 📱 Application APK
-            Voici la dernière version générée automatiquement.
+            ### 📱 Binaires Multi-Plateformes
+            Voici la dernière version générée manuellement.
             - **Date** : ${{ github.event.head_commit.timestamp }}
             - **Commit** : ${{ github.sha }}
           draft: false
           prerelease: false
-          files: flutter_app/build/app/outputs/flutter-apk/app-release.apk
+          files: |
+            bin/app-release.apk
+            bin/SignLanguageApp-iOS-Unsigned.ipa
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
