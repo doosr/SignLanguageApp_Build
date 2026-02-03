@@ -114,13 +114,22 @@ def train_pro_sequence_model():
     print(f"\n🏆 Final Sequence Accuracy: {acc*100:.2f}%")
 
     # 8. Convert
-    print("\n📦 Converting to TFLite...")
-    converter = tf.lite.TFLiteConverter.from_keras_model(model)
+    print("\n📦 Converting to TFLite (with static batch size for compatibility)...")
+    
+    # Define a concrete function with FIXED batch size = 1
+    # This is crucial for LSTM conversion to standard TFLite ops (prevents "TensorList" errors)
+    run_model = tf.function(lambda x: model(x))
+    concrete_func = run_model.get_concrete_function(
+        tf.TensorSpec([1, SEQUENCE_LENGTH, FEATURES_PER_FRAME], model.inputs[0].dtype)
+    )
+    
+    converter = tf.lite.TFLiteConverter.from_concrete_functions([concrete_func])
+    
     converter.target_spec.supported_ops = [
-      tf.lite.OpsSet.TFLITE_BUILTINS, # Standard
-      tf.lite.OpsSet.SELECT_TF_OPS    # LSTM specific if needed
+      tf.lite.OpsSet.TFLITE_BUILTINS,
     ]
-    converter.optimizations = [tf.lite.Optimize.DEFAULT]
+    # converter.optimizations = [tf.lite.Optimize.DEFAULT] # Optional: Enable for smaller size
+    
     tflite_model = converter.convert()
 
     with open(MODEL_TFLITE_PATH, 'wb') as f:

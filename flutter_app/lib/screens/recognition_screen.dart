@@ -51,7 +51,7 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
   int _sensorRotation = 0;
   bool _isInitializing = true;
   bool _useESP32Camera = false; 
-  bool _mirrorLandmarks = true; // Mirror for front camera
+  bool _mirrorLandmarks = true; // Default for front camera
   
   // Buffers
   final List<String> _letterBuffer = [];
@@ -80,7 +80,6 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
   // Interpreters and ValueNotifiers
   Interpreter? _interpreterLetters;
   Interpreter? _interpreterWords;
-  final ValueNotifier<List<List<double>>> _handsNotifier = ValueNotifier([]);
   final ValueNotifier<String> _detectedTextNotifier = ValueNotifier("En attente...");
   final ValueNotifier<String> _debugInfoNotifier = ValueNotifier("Initializing...");
   final ValueNotifier<double> _confidenceNotifier = ValueNotifier(0.0);
@@ -128,6 +127,51 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
   void initState() {
     super.initState();
     _initializeResources();
+    // Listen to connection changes for auto-switching
+    _esp32Service.isConnected.addListener(_onConnectionChanged);
+  }
+
+  @override
+  void dispose() {
+    _esp32Service.isConnected.removeListener(_onConnectionChanged);
+    _controller?.stopImageStream();
+    _controller?.dispose();
+    _plugin?.dispose();
+    super.dispose();
+  }
+
+  void _onConnectionChanged() {
+    if (!mounted) return;
+    bool isConnected = _esp32Service.isConnected.value;
+    
+    // Valid only if enabled in settings
+    if (_esp32Service.isEnabled.value) {
+      setState(() {
+         // Auto-switch: If connected -> ESP32, else -> Phone
+         _useESP32Camera = isConnected; 
+      });
+      
+      // Trigger camera resource switch
+      _initCamera();
+      
+      if (isConnected) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("📡 ESP32-CAM Connectée - Passage en vue Live"),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          )
+        );
+      } else {
+         ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("⚠️ ESP32-CAM Déconnectée - Retour caméra téléphone"),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 2),
+          )
+        );
+      }
+    }
   }
 
   Future<void> _initializeResources() async {
@@ -154,17 +198,15 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       } else {
           _useESP32Camera = false;
       }
-      // Old logic removed: _useESP32Camera = _esp32Service.isEnabled.value && _esp32Service.isConnected.value;
       
       // Request permissions
       _requestPermissions();
       
-      // Load everything in parallel
-      await Future.wait([
-        _initCamera(),
-        _loadModels(),
-        _initPlugin(),
-      ]);
+      // Sequential initialization to prevent race conditions
+      // Plugin requires ModelService to be initialized first
+      await _initCamera(); 
+      await _loadModels(); 
+      await _initPlugin();
       
       print("✅ All initialization complete");
     } catch (e) {
@@ -180,10 +222,12 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
 
   Future<void> _initPlugin() async {
     try {
+      // Note: hand_landmarker plugin downloads model if not found.
+      // We ensure permissions are granted before this.
       _plugin = HandLandmarkerPlugin.create(
         numHands: 2,
-        minHandDetectionConfidence: 0.5, // Lowered for better detection
-        delegate: HandLandmarkerDelegate.gpu, // GPU for performance
+        minHandDetectionConfidence: 0.5, 
+        delegate: HandLandmarkerDelegate.gpu, 
       );
       print("✅ HandLandmarkerPlugin initialized");
     } catch (e) {
@@ -198,6 +242,9 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
   Future<void> _loadModels() async {
     try {
       final modelService = ModelService();
+      
+      // Ensure assets are copied to storage
+      await modelService.initialize();
       
       // Load or Get Cached Models
       if (!modelService.areModelsLoaded) {
@@ -214,6 +261,21 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       _labelsWords = modelService.labelsWords;
       
       print("✅ Models ready!");
+      
+      // ERROR CHECK
+      if (modelService.loadError != null) {
+         if (mounted) {
+           showDialog(
+             context: context, 
+             builder: (ctx) => AlertDialog(
+               title: const Text("⚠️ Erreur Modèle AI"),
+               content: SingleChildScrollView(child: Text(modelService.loadError!)),
+               actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("OK"))],
+             )
+           );
+         }
+      }
+      
     } catch (e) {
       print("❌ Error loading models: $e");
     }
@@ -281,9 +343,6 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
     }
   }
 
-  // Move this to top level or static for compute
-
-
   int _missedFrameCounter = 0; // Persistence for word buffer
 
   void _processCameraImage(CameraImage image) async {
@@ -303,7 +362,6 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
           bool isFrontCamera = _controller!.description.lensDirection == CameraLensDirection.front;
 
           List<Map<String, dynamic>> rawHandsData = [];
-          
           List<List<double>> uiHands = []; // For drawing
 
           // OPTIMIZATION: Rotation flags
@@ -331,16 +389,15 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
                  finalY = 1.0 - py;
                }
 
-                if (_mirrorLandmarks) {
-                  finalX = 1.0 - finalX;
-                }
+               if (_mirrorLandmarks) {
+                 finalX = 1.0 - finalX;
+               }
                
                normalizedLandmarks.add(finalX);
                normalizedLandmarks.add(finalY);
             }
             uiHands.add(normalizedLandmarks);
             
-            // Reverted to raw data passing (no label)
             rawHandsData.add({
               'landmarks': normalizedLandmarks,
             });
@@ -375,6 +432,7 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
      }
   }
 
+  // UPDATED ISOLATE FUNCTION: Spatial Sorting AND Relative Normalization
   static List<double> _processHandLandmarksSpatial(List<Map<String, dynamic>> handsData) {
     if (handsData.isEmpty) return List.filled(84, 0.0);
 
@@ -382,14 +440,14 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       return (hand['landmarks'] as List).cast<double>();
     }
 
-    // 1. Sort hands left-to-right based on first landmark X
+    // 1. Sort hands left-to-right
     handsData.sort((a, b) {
       double xa = getLandmarks(a)[0];
       double xb = getLandmarks(b)[0];
       return xa.compareTo(xb);
     });
 
-    // 2. Calculate MinX and MinY across ALL detected landmarks (Global bounding box)
+    // 2. Calculate MinX and MinY across ALL detected landmarks (Global bounding box for the frame)
     double minX = double.infinity;
     double minY = double.infinity;
 
@@ -401,7 +459,7 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       }
     }
 
-    // 3. Normalize relative to minX, minY helper
+    // 3. Normalize relative to minX, minY
     List<double> normalizeHand(List<double> landmarks) {
       List<double> normalized = [];
       for (int i = 0; i < landmarks.length; i += 2) {
@@ -427,6 +485,7 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
     return features;
   }
 
+
   void _runInferenceLetters(List<double> features) {
     if (_interpreterLetters == null) return;
     
@@ -449,7 +508,6 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       }
     }
 
-    // MATCH PYTHON: 0.4 threshold (using 0.5 for slightly safer margin)
     if (maxProb > 0.5) { 
       String label = _labelsLetters[maxIdx];
       _debugInfoNotifier.value = "Letter: $label (${(maxProb * 100).toStringAsFixed(1)}%)";
@@ -476,8 +534,23 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
 
     // Need full sequence for word detection
     if (_sequenceBuffer.length == _sequenceLength) {
-      // LSTM INPUT: [Batch, Time, Features] -> [1, 15, 84]
-      var input = [_sequenceBuffer]; 
+      Object input;
+      
+      // LOGIC SWITCH: LSTM (Sequence) vs Dense (Flattened)
+      if (ModelService().isLstmModel) {
+         // LSTM INPUT: [Batch, Time, Features] -> [1, 15, 84]
+         input = [_sequenceBuffer]; 
+      } else {
+         // DENSE INPUT: [Batch, Time * Features] -> [1, 1260]
+         // Flatten the sequence
+         List<double> flattened = [];
+         for (var frame in _sequenceBuffer) {
+           flattened.addAll(frame);
+         }
+         input = [flattened];
+      }
+
+      // Output: [Batch, NumClasses] -> [1, N]
       var output = List.filled(1, List.filled(_labelsWords.length, 0.0));
       
       try {
@@ -496,12 +569,6 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
         }
       }
       
-      // LOG PROBS for Debugging
-      // print("Word Prob: $maxProb for ${_labelsWords[maxIdx]}");
-
-      // MATCH PYTHON: "Candidate History" & Voting
-      // Python: History 10, Freq >= 5, Prob > 0.15
-      
       String label = _labelsWords[maxIdx];
       _debugInfoNotifier.value = "Word: $label (${(maxProb * 100).toStringAsFixed(1)}%)";
       _confidenceNotifier.value = maxProb;
@@ -511,12 +578,10 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       
       int freq = _wordCandidateHistory.where((e) => e == label).length;
       
-      if (maxProb > 0.4 && freq >= 6) {
-         // Anti-spam handled in _onGestureDetected with timeout
+      if (maxProb > 0.85 && freq >= 6) {
          _onGestureDetected(label);
          
-         // Don't clear immediately, let it flow? 
-         // Python: self.candidate_history = [] # Reset après validation
+         // Clear buffer to prevent double triggers for the same gesture instance
          _wordCandidateHistory.clear();
          _sequenceBuffer.clear();
       }
@@ -573,14 +638,6 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       _pendingEmoji = null;
     });
     _speak();
-  }
-
-  @override
-  void dispose() {
-    _controller?.stopImageStream();
-    _controller?.dispose();
-    _plugin?.dispose();
-    super.dispose();
   }
 
   void _speak() async {
@@ -690,7 +747,7 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
        return const Scaffold(backgroundColor: Colors.black, body: Center(child: Text("Camera Error", style: TextStyle(color: Colors.white))));
     }
 
-    bool isFrontCamera = _controller!.description.lensDirection == CameraLensDirection.front;
+    bool isFrontCamera = (_controller != null) && (_controller!.description.lensDirection == CameraLensDirection.front);
 
     return Scaffold(
       body: Container(
@@ -705,7 +762,7 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
           child: Column(
             children: [
               // 1. Title Header
-              Padding(
+                Padding(
                 padding: const EdgeInsets.only(top: 8, bottom: 8),
                 child: ShaderMask(
                   shaderCallback: (bounds) => const LinearGradient(
@@ -732,8 +789,9 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
                     child: Stack(
                       children: [
                         // Camera Stream
-                        Positioned.fill(
-                           child: _useESP32Camera ? _buildESP32Stream() : CameraPreview(_controller!),
+                           child: _useESP32Camera 
+                             ? _buildESP32Stream() 
+                             : CameraPreview(_controller!),
                         ),
                         
                         // Hand Landmarks Overlay
@@ -746,9 +804,9 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
                                 child: CustomPaint(
                                   painter: HandPainter(
                                     currentHands,
-                                    _controller!.value.previewSize!,
+                                    _useESP32Camera ? const Size(640, 480) : _controller!.value.previewSize!,
                                     _sensorRotation,
-                                    isFrontCamera
+                                    _useESP32Camera ? false : isFrontCamera
                                   ),
                                 ),
                               );
@@ -843,8 +901,6 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
                             }
                           ),
                         ),
-                        
-                        // Live Indicator
                         if (_useESP32Camera)
                         Positioned(
                           top: 12, left: 12,
@@ -854,7 +910,7 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
                               color: Colors.black54,
                               borderRadius: BorderRadius.circular(12),
                             ),
-                            child: Row(
+                            child: const Row(
                               children: [
                                 BlinkingDot(color: Colors.redAccent),
                                 SizedBox(width: 8),
@@ -863,6 +919,42 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
                             ),
                           ),
                         ),
+
+                        // Word Confirmation Overlay
+                        if (_pendingWord != null)
+                          Center(
+                            child: GestureDetector(
+                              onTap: _confirmWord,
+                              child: Container(
+                                padding: const EdgeInsets.all(20),
+                                decoration: BoxDecoration(
+                                  gradient: AppTheme.primaryGradient,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: Colors.white, width: 4),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: AppTheme.primaryPurple.withOpacity(0.5),
+                                      blurRadius: 30,
+                                    )
+                                  ],
+                                ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(_pendingEmoji ?? "✅", style: const TextStyle(fontSize: 60)),
+                                    Text(
+                                      _pendingWord!,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 18,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                   ),
@@ -897,7 +989,7 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
                        setState(() => currentMode = val ? "MOTS" : "LETTRES");
                     }),
                     const SizedBox(height: 8),
-                    _buildToggleRow("Caméra Native / ESP32", _useESP32Camera, (val) {
+                     _buildToggleRow("Caméra Native / ESP32", _useESP32Camera, (val) {
                        if (val != _useESP32Camera) {
                           _toggleCameraSource();
                        }
@@ -965,8 +1057,6 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
     );
   }
   
-  // -- New Helper Widgets --
-
   Widget _buildCircleFlag(String flag, String lang) {
     bool isSelected = _selectedLanguage == lang;
     return GestureDetector(
@@ -1019,390 +1109,6 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
     );
   }
 
-  Widget _buildControls() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
-        children: [
-          // Mode Toggle
-          Expanded(
-            child: GlassmorphismCard(
-              padding: const EdgeInsets.all(4),
-              borderRadius: 12,
-              hasBorder: false,
-              child: Row(
-                children: [
-                  _buildModeButton("🔤", "LETTRES"),
-                  const SizedBox(width: 4),
-                  _buildModeButton("📝", "MOTS"),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          // Language Flags
-          LanguageFlagButton(
-            flag: "🇫🇷",
-            language: "",
-            isSelected: _selectedLanguage == "Français",
-            onTap: () => _translatePhrase("Français"),
-          ),
-          const SizedBox(width: 8),
-          LanguageFlagButton(
-            flag: "🇬🇧",
-            language: "",
-            isSelected: _selectedLanguage == "Anglais",
-            onTap: () => _translatePhrase("Anglais"),
-          ),
-          const SizedBox(width: 8),
-          LanguageFlagButton(
-            flag: "🇹🇳",
-            language: "",
-            isSelected: _selectedLanguage == "Arabe",
-            onTap: () => _translatePhrase("Arabe"),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildModeButton(String emoji, String mode) {
-    bool isSelected = currentMode == mode;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => setState(() => currentMode = mode),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          decoration: BoxDecoration(
-            color: isSelected ? AppTheme.primaryPurple : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Center(
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(emoji, style: const TextStyle(fontSize: 18)),
-                const SizedBox(width: 4),
-                Text(
-                  mode == "LETTRES" ? "Lettres" : "Mots",
-                  style: TextStyle(
-                    color: isSelected ? Colors.white : AppTheme.textMuted,
-                    fontSize: 12,
-                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPhraseDisplay() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: GlassmorphismCard(
-        padding: const EdgeInsets.all(16),
-        borderRadius: 16,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    "Phrase ($_selectedLanguage): $phrase",
-                    style: AppTheme.bodyLarge.copyWith(
-                      color: AppTheme.textPrimary,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                if (phrase.isNotEmpty) ...[
-                  IconButton(
-                    icon: const Icon(Icons.volume_up, color: AppTheme.accentCyan, size: 20),
-                    onPressed: _speak,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                  ),
-                ],
-              ],
-            ),
-            if (phrase.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              const Divider(color: Colors.white10, height: 1),
-              const SizedBox(height: 8),
-              SizedBox(
-                height: 60,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: phrase.length,
-                  itemBuilder: (c, i) {
-                    String char = phrase[i];
-                    if (char == " ") return const SizedBox(width: 12);
-                    String k = char.toUpperCase();
-                    
-                    return Container(
-                      margin: const EdgeInsets.only(right: 6),
-                      width: 45,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.05),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.white10),
-                      ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Expanded(
-                            child: ClipRRect(
-                              borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
-                              child: Image.asset(
-                                'assets/gestures/${k}_0.jpg',
-                                fit: BoxFit.cover,
-                                errorBuilder: (c, e, s) => const Center(
-                                  child: Icon(Icons.error_outline, size: 10, color: Colors.white24)
-                                ),
-                              ),
-                            ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(vertical: 2),
-                            child: Text(
-                              char,
-                              style: const TextStyle(
-                                color: AppTheme.accentCyan,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCameraPreview(bool isFrontCamera) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            // Camera Preview (ESP32 or Phone)
-            _useESP32Camera ? _buildESP32Stream() : CameraPreview(_controller!),
-            
-            Positioned(
-              top: 12,
-              right: 12,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.6),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.white.withOpacity(0.2)),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (_useESP32Camera) ...[
-                      BlinkingDot(color: Colors.redAccent),
-                      const SizedBox(width: 8),
-                      const Text(
-                        'EN DIRECT',
-                        style: TextStyle(
-                          color: Colors.redAccent,
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Container(width: 1, height: 12, color: Colors.white24),
-                      const SizedBox(width: 8),
-                    ],
-                    Icon(
-                      _useESP32Camera ? Icons.wifi : Icons.phone_android,
-                      size: 14,
-                      color: _useESP32Camera ? AppTheme.accentCyan : Colors.white70,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      _useESP32Camera ? 'ESP32-CAM' : 'Téléphone',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            
-            // Hand Landmarks Overlay
-            ValueListenableBuilder<List<List<double>>>(
-              valueListenable: _handsNotifier,
-              builder: (context, currentHands, _) {
-                if (currentHands.isEmpty) return const SizedBox.shrink();
-                return CustomPaint(
-                  painter: HandPainter(
-                    currentHands, 
-                    _controller!.value.previewSize!, 
-                    _sensorRotation, 
-                    isFrontCamera
-                  ),
-                );
-              },
-            ),
-            
-            // Detection Display Overlay
-            Align(
-              alignment: Alignment.bottomCenter,
-              child: Container(
-                margin: const EdgeInsets.only(bottom: 20),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.6),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.white.withOpacity(0.2)),
-                      ),
-                      child: ValueListenableBuilder<String>(
-                        valueListenable: _detectedTextNotifier,
-                        builder: (context, text, _) => Text(
-                          text,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 36,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            
-            // Word Confirmation Button
-            if (_pendingWord != null)
-              Center(
-                child: GestureDetector(
-                  onTap: _confirmWord,
-                  child: Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      gradient: AppTheme.primaryGradient,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 4),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppTheme.primaryPurple.withOpacity(0.5),
-                          blurRadius: 30,
-                        )
-                      ],
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(_pendingEmoji ?? "✅", style: const TextStyle(fontSize: 60)),
-                        Text(
-                          _pendingWord!,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 18,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildBottomControls() {
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Row(
-        children: [
-          _buildControlButton(Icons.delete_outline, Colors.red, _clear),
-          const SizedBox(width: 8),
-          _buildControlButton(Icons.backspace_outlined, Colors.orange, _backspace),
-          const SizedBox(width: 8),
-          _buildControlButton(Icons.space_bar, Colors.blue, _addSpace),
-          const SizedBox(width: 8),
-          Expanded(
-            flex: 2,
-            child: GestureDetector(
-              onTap: () => Navigator.pushNamed(context, '/esp32-config'),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                decoration: BoxDecoration(
-                  color: AppTheme.primaryBlue.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppTheme.accentCyan),
-                ),
-                child: const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.videocam, color: AppTheme.accentCyan, size: 18),
-                    SizedBox(width: 8),
-                    Text(
-                      'ESP32-CAM',
-                      style: TextStyle(color: AppTheme.textPrimary, fontSize: 12),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildControlButton(IconData icon, Color color, VoidCallback onPressed) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onPressed,
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(
-            color: color.withOpacity(0.2),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: color.withOpacity(0.5)),
-          ),
-          child: Center(
-            child: Icon(icon, color: color, size: 20),
-          ),
-        ),
-      ),
-    );
-  }
-
-  // -- Action Buttons (Clear, Backspace, Space, Config) --
   Widget _buildActionButtons() {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16, left: 24, right: 24),
@@ -1433,7 +1139,6 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
     );
   }
   
-  // Widget for ESP32-CAM stream
   Widget _buildESP32Stream() {
     final streamUrl = _esp32Service.getStreamUrl();
     
@@ -1461,23 +1166,14 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       );
     }
     
-    // Check connectivity first
     if (!_esp32Service.isConnected.value) {
-       _esp32Service.testConnection().then((connected) {
-         if (mounted && !connected) {
-           ScaffoldMessenger.of(context).showSnackBar(
-             const SnackBar(content: Text("ESP32 non connecté. Vérifiez l'adresse IP."))
-           );
-         }
-       });
+       _esp32Service.testConnection();
     }
 
-    // Use a unique key to force refresh if stream stalls
-    // Use Mjpeg widget for robust stream handling
-    // Use custom MjpegWidget
     return MjpegWidget(
       streamUrl: streamUrl,
       fit: BoxFit.cover,
+      onFrame: _processESP32Frame,
       errorBuilder: (context) {
         return Container(
           color: Colors.black,
@@ -1503,5 +1199,19 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
         );
       },
     );
+  }
+
+  void _processESP32Frame(Uint8List jpegBytes) {
+    if (_isDetecting || !mounted || _plugin == null) return;
+    
+    _frameCounter++;
+    if (_frameCounter % 3 != 0) return; // ESP32 is usually 10-15fps, process every 3rd
+    
+    _isDetecting = true;
+    
+    // In a real app, we'd decode JPEG to CameraImage or use plugin.detectImage if available
+    // For now, we note that ESP32 detection is a FUTURE target or REQUIRES plugin documentation
+    _isDetecting = false; 
+    _debugInfoNotifier.value = "ESP32 Frame Rx (${jpegBytes.length} bytes)";
   }
 }

@@ -19,6 +19,7 @@ class ModelService {
   List<String> labelsLetters = [];
   List<String> labelsWords = [];
   bool get areModelsLoaded => interpreterLetters != null && interpreterWords != null;
+  bool isLstmModel = true; // Track type of loaded model
 
   Future<void> initialize() async {
     _lettersModelPath = await _copyAssetToFile('assets/model_letters.tflite', 'model_letters.tflite');
@@ -31,36 +32,70 @@ class ModelService {
     }
   }
   
+  // Error tracking
+  String? loadError;
+
   Future<void> loadInterpreters() async {
     if (areModelsLoaded) return; // Skip if already active
     
     print("🧠 Loading models into memory...");
+    loadError = null; // Reset error
     
     try {
       // 1. Letters
-      if (_lettersModelPath != null && await File(_lettersModelPath!).exists()) {
-        interpreterLetters = Interpreter.fromFile(File(_lettersModelPath!));
-      } else {
-        interpreterLetters = await Interpreter.fromAsset('assets/model_letters.tflite');
+      try {
+        if (_lettersModelPath != null && await File(_lettersModelPath!).exists()) {
+          interpreterLetters = Interpreter.fromFile(File(_lettersModelPath!));
+        } else {
+          interpreterLetters = await Interpreter.fromAsset('assets/model_letters.tflite');
+        }
+      } catch (e) {
+        print("❌ Error loading LETTERS model: $e");
+        loadError = "Letters Model: $e";
+        // Continue trying to load words
       }
       
-      // 2. Words (LSTM)
-      if (_wordsModelPath != null && await File(_wordsModelPath!).exists()) {
-        interpreterWords = Interpreter.fromFile(File(_wordsModelPath!));
-      } else {
-        interpreterWords = await Interpreter.fromAsset('assets/model_words_lstm.tflite');
+      // 2. Words (LSTM or Dense fallback)
+      try {
+        if (_wordsModelPath != null && await File(_wordsModelPath!).exists()) {
+          interpreterWords = Interpreter.fromFile(File(_wordsModelPath!));
+          isLstmModel = true; 
+        } else if (await File('${(await getApplicationDocumentsDirectory()).path}/model_words.tflite').exists()) {
+           // Fallback to Dense model if user uses convert_to_tflite_v2.py
+           interpreterWords = Interpreter.fromFile(File('${(await getApplicationDocumentsDirectory()).path}/model_words.tflite'));
+           isLstmModel = false;
+           print("⚠️ Using Fallback Dense Model for Words");
+        } else {
+          // Default asset
+          interpreterWords = await Interpreter.fromAsset('assets/model_words_lstm.tflite');
+          isLstmModel = true;
+        }
+      } catch (e) {
+         print("❌ Error loading WORDS model: $e");
+         loadError = (loadError ?? "") + "\nWords Model: $e";
       }
       
       // 3. Labels
-      String l1 = await rootBundle.loadString('assets/model_letters_labels.txt');
-      labelsLetters = l1.split('\n').where((s) => s.isNotEmpty).toList();
+      try {
+        String l1 = await rootBundle.loadString('assets/model_letters_labels.txt');
+        labelsLetters = l1.split('\n').where((s) => s.isNotEmpty).toList();
+        
+        String l2 = await rootBundle.loadString('assets/model_words_labels.txt');
+        labelsWords = l2.split('\n').where((s) => s.isNotEmpty).toList();
+      } catch (e) {
+        print("❌ Error loading LABELS: $e");
+        loadError = (loadError ?? "") + "\nLabels: $e";
+      }
       
-      String l2 = await rootBundle.loadString('assets/model_words_labels.txt');
-      labelsWords = l2.split('\n').where((s) => s.isNotEmpty).toList();
+      if (interpreterLetters != null || interpreterWords != null) {
+         print("🧠 Models loaded in RAM! (Partial or Complete)");
+      } else {
+         print("❌ ALL Models failed to load.");
+      }
       
-      print("🧠 Models loaded in RAM!");
     } catch (e) {
-      print("❌ Model MEMORY load failed: $e");
+      print("❌ Model MEMORY load critical failure: $e");
+      loadError = "Critical: $e";
     }
   }
 
