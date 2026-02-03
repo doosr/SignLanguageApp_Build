@@ -16,6 +16,7 @@ class InverseModeScreen extends StatefulWidget {
 class _InverseModeScreenState extends State<InverseModeScreen> with TickerProviderStateMixin {
   final stt.SpeechToText _speech = stt.SpeechToText();
   bool _isListening = false;
+  int _micClickCount = 0;
   String _recognizedText = '';
   String _selectedLanguage = 'Français';
   double _speed = 1.0;
@@ -93,40 +94,56 @@ class _InverseModeScreenState extends State<InverseModeScreen> with TickerProvid
     await _speech.initialize();
   }
 
-  void _toggleListening() async {
-    if (_isListening) {
-      _stopListening();
-    } else {
-      bool available = await _speech.initialize();
-      if (available) {
+  Future<void> _startListening() async {
+    bool available = await _speech.initialize();
+    if (available) {
+      if (mounted) {
         setState(() => _isListening = true);
         _waveController.repeat();
-        _speech.listen(
-          localeId: _languageCodes[_selectedLanguage],
-          onResult: (result) {
+      }
+      _speech.listen(
+        localeId: _languageCodes[_selectedLanguage],
+        onResult: (result) {
+          if (mounted) {
             setState(() {
               _recognizedText = result.recognizedWords.toUpperCase();
             });
-          },
-          listenMode: stt.ListenMode.confirmation, // Continuous listening
-          pauseFor: const Duration(seconds: 3), // Pause detection
-          onSoundLevelChange: (level) {
-            // Optional: could show sound level
-          },
-        );
-      }
+          }
+        },
+        listenMode: stt.ListenMode.confirmation,
+        pauseFor: const Duration(seconds: 3),
+      );
+    }
+  }
+
+  void _handleMicClick() {
+    if (_micClickCount == 0) {
+      _resetRecognition();
+      _startListening();
+      setState(() => _micClickCount = 1);
+    } else if (_micClickCount == 1) {
+      _startNewPhrase();
+      setState(() => _micClickCount = 2);
+    } else {
+      _stopListening();
+      setState(() => _micClickCount = 0);
     }
   }
   
   void _stopListening() async {
     if (_isListening) {
       await _speech.stop();
-      setState(() => _isListening = false);
-      _waveController.stop();
-      
-      // Start animation if text exists
-      if (_recognizedText.isNotEmpty) {
-        _startGestureAnimation();
+      if (mounted) {
+        setState(() {
+          _isListening = false;
+          _micClickCount = 0;
+        });
+        _waveController.stop();
+        
+        // Start animation if text exists
+        if (_recognizedText.isNotEmpty) {
+          _startGestureAnimation();
+        }
       }
     }
   }
@@ -174,11 +191,11 @@ class _InverseModeScreenState extends State<InverseModeScreen> with TickerProvid
       Future.delayed(const Duration(milliseconds: 250), () {
         if (mounted) {
           setState(() => _isListening = false); // Visually reset
-          _toggleListening(); // Restarts properly
+          _startListening(); // Restarts properly
         }
       });
     } else {
-      _toggleListening();
+      _startListening();
     }
   }
 
@@ -301,8 +318,7 @@ class _InverseModeScreenState extends State<InverseModeScreen> with TickerProvid
                   
                   // Microphone Button
                   GestureDetector(
-                    onTap: _startNewPhrase,
-                    onDoubleTap: _stopListening,
+                    onTap: _handleMicClick,
                     child: AnimatedBuilder(
                       animation: _pulseController,
                       builder: (context, child) {
