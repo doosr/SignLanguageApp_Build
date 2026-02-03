@@ -589,41 +589,8 @@ class _InverseModeScreenState extends State<InverseModeScreen> with TickerProvid
                 ),
               ),
             
-            // Control Buttons
-            if (_recognizedText.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    // Stop Button (only if listening)
-                    if (_isListening)
-                      _buildControlButton(
-                        icon: Icons.stop,
-                        label: 'Stop',
-                        color: Colors.red,
-                        onTap: _stopListening,
-                      ),
-                    
-                    // Reset Button
-                    _buildControlButton(
-                      icon: Icons.refresh,
-                      label: 'Réinitialiser',
-                      color: const Color(0xFF06b6d4),
-                      onTap: _resetRecognition,
-                    ),
-                    
-                    // New Phrase Button (only if not listening)
-                    if (!_isListening)
-                      _buildControlButton(
-                        icon: Icons.mic,
-                        label: 'Nouvelle phrase',
-                        color: const Color(0xFF8b5cf6),
-                        onTap: _startNewPhrase,
-                      ),
-                  ],
-                ),
-              ),
+            // Control Buttons removed
+            const SizedBox(height: 20),
             ],
           ),
         ),
@@ -631,47 +598,7 @@ class _InverseModeScreenState extends State<InverseModeScreen> with TickerProvid
     );
   }
   
-  Widget _buildControlButton({
-    required IconData icon,
-    required String label,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              color.withOpacity(0.3),
-              color.withOpacity(0.2),
-            ],
-          ),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: color.withOpacity(0.5),
-            width: 1,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: color, size: 20),
-            const SizedBox(width: 8),
-            Text(
-              label,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+
 }
 
 // Advanced Sound Wave Painter
