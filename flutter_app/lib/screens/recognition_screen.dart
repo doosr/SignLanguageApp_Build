@@ -80,6 +80,7 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
   // Interpreters and ValueNotifiers
   Interpreter? _interpreterLetters;
   Interpreter? _interpreterWords;
+  final ValueNotifier<List<List<double>>> _handsNotifier = ValueNotifier([]);
   final ValueNotifier<String> _detectedTextNotifier = ValueNotifier("En attente...");
   final ValueNotifier<String> _debugInfoNotifier = ValueNotifier("Initializing...");
   final ValueNotifier<double> _confidenceNotifier = ValueNotifier(0.0);
@@ -789,10 +790,9 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
                     child: Stack(
                       children: [
                         // Camera Stream
-                           child: _useESP32Camera 
+                        _useESP32Camera 
                              ? _buildESP32Stream() 
                              : CameraPreview(_controller!),
-                        ),
                         
                         // Hand Landmarks Overlay
                         Positioned.fill(
