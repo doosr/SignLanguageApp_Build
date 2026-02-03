@@ -78,6 +78,9 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
   List<String> _wordCandidateHistory = [];
 
   // Interpreters and ValueNotifiers
+  Interpreter? _interpreterLetters;
+  Interpreter? _interpreterWords;
+  final ValueNotifier<List<List<double>>> _handsNotifier = ValueNotifier([]);
   final ValueNotifier<String> _detectedTextNotifier = ValueNotifier("En attente...");
   final ValueNotifier<String> _debugInfoNotifier = ValueNotifier("Initializing...");
   final ValueNotifier<double> _confidenceNotifier = ValueNotifier(0.0);
