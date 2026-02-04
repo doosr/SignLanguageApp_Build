@@ -1,6 +1,3 @@
-import 'dart:ui';
-import '../widgets/mjpeg_widget.dart';
-import '../widgets/blinking_dot.dart';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter_tts/flutter_tts.dart';
@@ -21,6 +18,10 @@ import '../services/esp32_camera_service.dart';
 import '../services/model_service.dart';
 import 'dart:io';
 import 'package:http/http.dart' as http;
+// NEW IMPORTS FOR HYBRID PIPELINE
+import 'package:image/image.dart' as img;
+import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
+import 'package:path_provider/path_provider.dart';
 
 class RecognitionScreen extends StatefulWidget {
   const RecognitionScreen({Key? key}) : super(key: key);
@@ -41,6 +42,13 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
   bool _isDetecting = false;
   int _frameCounter = 0;
   List<Hand> _landmarks = [];
+  
+  // ESP32 Hybrid Pipeline State
+  Interpreter? _interpreterHand; // Raw TFLite for cropped hands
+  PoseDetector? _poseDetector;
+  Uint8List? _currentEspFrame;
+  Timer? _espTimer;
+  bool _isEspPipelineRunning = false;
   
   // State
   String detectedText = "En attente...";
@@ -114,7 +122,8 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
     "Y": {"Français": "Y", "Anglais": "Y", "Arabe": "ي"},
     "Z": {"Français": "Z", "Anglais": "Z", "Arabe": "ز"},
   };
-
+  
+  // ... (Keep Translation Words Map) ...
   final Map<String, Map<String, String>> _translationsWords = {
     "BONJOUR": {"Français": "Bonjour", "Anglais": "Hello", "Arabe": "مرحبا", "emoji": "👋"},
     "MERCI": {"Français": "Merci", "Anglais": "Thank you", "Arabe": "شكرا", "emoji": "🙏"},
@@ -134,10 +143,13 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
 
   @override
   void dispose() {
+    _espTimer?.cancel(); // Stop ESP Loop
     _esp32Service.isConnected.removeListener(_onConnectionChanged);
     _controller?.stopImageStream();
     _controller?.dispose();
     _plugin?.dispose();
+    _interpreterHand?.close(); 
+    _poseDetector?.close();
     super.dispose();
   }
 
@@ -251,8 +263,6 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       if (!modelService.areModelsLoaded) {
         print("Loading models...");
         await modelService.loadInterpreters();
-      } else {
-        print("⚡ Using cached RAM models (Instant Load)");
       }
       
       // Assign references
@@ -260,44 +270,222 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       _interpreterWords = modelService.interpreterWords;
       _labelsLetters = modelService.labelsLetters;
       _labelsWords = modelService.labelsWords;
-      
-      print("✅ Models ready!");
-      
-      // ERROR CHECK
-      if (modelService.loadError != null) {
-         if (mounted) {
-           showDialog(
-             context: context, 
-             builder: (ctx) => AlertDialog(
-               title: const Text("⚠️ Erreur Modèle AI"),
-               content: SingleChildScrollView(child: Text(modelService.loadError!)),
-               actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("OK"))],
-             )
-           );
-         }
+
+      // NEW: Load ESP32 Hybrid Models
+      try {
+        _interpreterHand = await Interpreter.fromAsset('assets/hand_landmark_full.tflite');
+        final options = PoseDetectorOptions(mode: PoseDetectionMode.single);
+        _poseDetector = PoseDetector(options: options);
+      } catch(e) {
+        print("Warning: ESP32 Models not found: $e");
       }
       
+      print("✅ Models ready!");
     } catch (e) {
       print("❌ Error loading models: $e");
     }
   }
 
+  // ---- ESP32 HYBRID PIPELINE LOGIC ----
+  
+  void _startESP32Loop() {
+    print("🚀 Starting ESP32 Hybrid Pipeline Loop");
+    _espTimer?.cancel();
+    _espTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
+      _fetchESP32Frame();
+    });
+  }
+
+  Future<void> _fetchESP32Frame() async {
+    if (!_useESP32Camera || _isEspPipelineRunning) return;
+    String ip = _esp32Service.espIP.value;
+    if (ip.isEmpty) return;
+
+    try {
+      _isEspPipelineRunning = true;
+      final response = await http.get(Uri.parse('http://$ip/capture')).timeout(const Duration(seconds: 2));
+      
+      if (response.statusCode == 200) {
+        if (mounted) {
+           setState(() {
+             _currentEspFrame = response.bodyBytes;
+           });
+           await _runESP32Inference(response.bodyBytes);
+        }
+      }
+    } catch (e) {
+       print("ESP Fetch Error: $e");
+    } finally {
+       _isEspPipelineRunning = false;
+    }
+  }
+
+  Future<void> _runESP32Inference(Uint8List jpegBytes) async {
+    if (_poseDetector == null || _interpreterHand == null) return;
+    
+    try {
+      // 1. Pose Detection (Wrist)
+      final tempDir = await getTemporaryDirectory();
+      final file = await File('${tempDir.path}/esp_frame.jpg').create();
+      await file.writeAsBytes(jpegBytes);
+      final inputImage = InputImage.fromFilePath(file.path);
+
+      final poses = await _poseDetector!.processImage(inputImage);
+      if (poses.isEmpty) {
+        _handsNotifier.value = []; 
+        return;
+      }
+
+      // Check wrists
+      final pose = poses.first;
+      final leftWrist = pose.landmarks[PoseLandmarkType.leftWrist];
+      final rightWrist = pose.landmarks[PoseLandmarkType.rightWrist];
+      PoseLandmark? targetWrist = (leftWrist!.likelihood > rightWrist!.likelihood) ? leftWrist : rightWrist;
+
+      img.Image? original = img.decodeJpg(jpegBytes);
+      if (original == null) return;
+
+      if (targetWrist != null && targetWrist.likelihood > 0.5) {
+        // 2. Crop
+        double boxSize = 250.0;
+        int cx = targetWrist.x.toInt();
+        int cy = targetWrist.y.toInt();
+        int x = (cx - boxSize / 2).toInt();
+        int y = (cy - boxSize / 2).toInt();
+        int w = boxSize.toInt();
+        int h = boxSize.toInt();
+
+        // Clamp
+        if (x < 0) x = 0; if (y < 0) y = 0;
+        if (x + w > original.width) w = original.width - x;
+        if (y + h > original.height) h = original.height - y;
+        if (w <= 0 || h <= 0) return;
+
+        // Resize
+        img.Image crop = img.copyCrop(original, x: x, y: y, width: w, height: h);
+        img.Image input = img.copyResize(crop, width: 224, height: 224);
+
+        // 3. Hand Inference
+        var inputTensor = _imageToFloat32(input);
+        var outputTensor = List.filled(1 * 63, 0.0).reshape([1, 63]);
+        _interpreterHand!.run(inputTensor, outputTensor);
+
+        // 4. Map & Normalize
+        List<double> handPointsRelative = []; // For TFLite (0..1 bounding box relative)
+        List<double> handPointsGlobal = [];   // For UI (0..1 screen relative)
+
+        // MinMax for normalization
+        double minX = 1000.0, minY = 1000.0;
+        
+        List<double> rawCoords = [];
+
+        for (int i = 0; i < 21; i++) {
+            double lx = outputTensor[0][i*3];
+            double ly = outputTensor[0][i*3+1];
+            
+            // ROI -> Global Pixel
+            double globalPx = x + (lx * w);
+            double globalPy = y + (ly * h);
+            
+            // Global Pixel -> Screen 0..1
+            handPointsGlobal.add(globalPx / original.width);
+            handPointsGlobal.add(globalPy / original.height);
+            
+            rawCoords.add(globalPx);
+            rawCoords.add(globalPy);
+            
+            if(globalPx < minX) minX = globalPx;
+            if(globalPy < minY) minY = globalPy;
+        }
+        
+        // Update UI
+        _handsNotifier.value = [handPointsGlobal];
+        
+        // Normalize for Letters Model (Relative to Bounding Box)
+        for(int i=0; i<rawCoords.length; i+=2) {
+           handPointsRelative.add(rawCoords[i] - minX);
+           handPointsRelative.add(rawCoords[i+1] - minY);
+        }
+        while(handPointsRelative.length < 84) handPointsRelative.add(0.0);
+
+        // 5. Run Classification (Letters/Words)
+        if (currentMode == "LETTRES") {
+           _runInferenceLetters(handPointsRelative);
+        } else {
+           _runInferenceWords(handPointsRelative);
+        }
+
+      } else {
+        _handsNotifier.value = [];
+      }
+    } catch (e) {
+      print("Hybrid Ppl Error: $e");
+    }
+  }
+
+   Object _imageToFloat32(img.Image image) {
+      var input = List.filled(1 * 224 * 224 * 3, 0.0).reshape([1, 224, 224, 3]);
+      for (int y = 0; y < 224; y++) {
+        for (int x = 0; x < 224; x++) {
+          var pixel = image.getPixel(x, y);
+          input[0][y][x][0] = (pixel.r / 255.0);
+          input[0][y][x][1] = (pixel.g / 255.0);
+          input[0][y][x][2] = (pixel.b / 255.0);
+        }
+      }
+      return input;
+  }
+
+
   Future<void> _initCamera() async {
     // Check if we should use ESP32 camera
     if (_useESP32Camera) {
       // ESP32 camera doesn't need CameraController
-      // Close phone camera if it was open
       if (_controller != null) {
         await _controller?.stopImageStream();
         await _controller?.dispose();
         _controller = null;
       }
       print("✅ Using ESP32-CAM stream - Phone camera closed");
+      
+      // START HYBRID PIPELINE
+      _startESP32Loop();
       return;
+    } else {
+      // Stop ESP loop if using Phone Cam
+      _espTimer?.cancel();
     }
     
     // Use phone camera
     if (cameras.isEmpty) {
+// ... (Camera Init Logic) ...
+    }
+// ...
+  }
+
+  // ... (keep processCameraImage, etc.) ...
+
+  // BUILD METHOD UPDATES
+  Widget _buildESP32Stream() {
+    if (_currentEspFrame == null) {
+       return Container(
+         color: Colors.black,
+         child: const Center(child: Column(
+           mainAxisSize: MainAxisSize.min,
+           children: [
+             CircularProgressIndicator(color: Colors.purpleAccent),
+             SizedBox(height: 10),
+             Text("Connexion ESP32...", style: TextStyle(color: Colors.white)),
+           ],
+         )),
+       );
+    }
+    return Image.memory(
+      _currentEspFrame!, 
+      gaplessPlayback: true, 
+      fit: BoxFit.cover, // Fill screen
+    );
+  }
       try {
         cameras = await availableCameras();
       } catch (e) {
