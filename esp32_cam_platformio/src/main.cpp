@@ -172,6 +172,9 @@ void handleStream() {
   String response = "HTTP/1.1 200 OK\r\nContent-Type: multipart/x-mixed-replace; boundary=frame\r\n\r\n";
   server.sendContent(response);
   
+  // Auto-LED ON
+  digitalWrite(LED_PIN, LED_ON);
+  
   while (client.connected()) {
     camera_fb_t *fb = esp_camera_fb_get();
     if (!fb) break;
@@ -185,6 +188,9 @@ void handleStream() {
     esp_camera_fb_return(fb);
     delay(10);
   }
+  
+  // Auto-LED OFF
+  digitalWrite(LED_PIN, LED_OFF);
 }
 
 void handleCapture() {

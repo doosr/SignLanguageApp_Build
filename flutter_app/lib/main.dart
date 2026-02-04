@@ -5,7 +5,10 @@ import 'package:permission_handler/permission_handler.dart';
 import 'dart:async';
 import 'package:tflite_flutter/tflite_flutter.dart';
 import 'package:hand_landmarker/hand_landmarker.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/services.dart';
+import 'screens/esp32_viewer.dart';
+import 'widgets/hand_painter.dart';
 import 'package:translator/translator.dart';
 import 'dart:io' show Platform;
 import 'screens/splash_screen.dart';
@@ -56,6 +59,7 @@ class MyApp extends StatelessWidget {
         '/inverse': (context) => const InverseModeScreen(),
         '/language': (context) => const LanguageSelectionScreen(),
         '/esp32-config': (context) => const ESP32ConfigScreen(),
+        '/esp32-viewer': (context) => const ESP32Viewer(ip: ''), // Placeholder, IP will be passed via arguments
       },
     );
   }
