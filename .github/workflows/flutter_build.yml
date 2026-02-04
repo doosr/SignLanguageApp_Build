@@ -39,3 +39,28 @@ jobs:
         with:
           name: app-release
           path: flutter_app/build/app/outputs/flutter-apk/app-release.apk
+
+  build-ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.38.9'
+          channel: 'stable'
+
+      - name: Install Dependencies
+        working-directory: ./flutter_app
+        run: flutter pub get
+
+      - name: Build iOS (No Codesign)
+        working-directory: ./flutter_app
+        run: flutter build ios --release --no-codesign
+
+      - name: Upload iOS App
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-app
+          path: flutter_app/build/ios/iphoneos/Runner.app
