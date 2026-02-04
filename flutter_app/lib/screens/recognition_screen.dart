@@ -1327,79 +1327,186 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
     );
   }
   
-  Widget _buildESP32Stream() {
-    final streamUrl = _esp32Service.getStreamUrl();
-    
-    if (streamUrl == null) {
-      return Container(
-        color: Colors.black,
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.wifi_off, size: 48, color: Colors.white54),
-              const SizedBox(height: 12),
-              Text(
-                'ESP32-CAM non disponible',
-                style: AppTheme.bodyMedium.copyWith(color: Colors.white70),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Retour à la caméra du téléphone...',
-                style: AppTheme.bodyMedium.copyWith(color: Colors.white54, fontSize: 12),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-    
-    if (!_esp32Service.isConnected.value) {
-       _esp32Service.testConnection();
-    }
-
-    return MjpegWidget(
-      streamUrl: streamUrl,
-      fit: BoxFit.cover,
-      onFrame: _processESP32Frame,
-      errorBuilder: (context) {
-        return Container(
-          color: Colors.black,
-          child: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.broken_image_outlined, size: 48, color: Colors.orange),
-                const SizedBox(height: 12),
-                Text(
-                  'Flux vidéo interrompu',
-                  style: AppTheme.bodyMedium.copyWith(color: Colors.white70),
-                ),
-                TextButton(
-                  onPressed: () {
-                    setState(() {});
-                  },
-                  child: const Text("Réessayer", style: TextStyle(color: AppTheme.accentCyan)),
-                )
-              ],
-            ),
-          ),
-        );
-      },
-    );
+  // ---- ESP32 HYBRID PIPELINE LOGIC ----
+  
+  void _startESP32Loop() {
+    print("🚀 Starting ESP32 Hybrid Pipeline Loop");
+    _espTimer?.cancel();
+    _espTimer = Timer.periodic(const Duration(milliseconds: 80), (timer) {
+      _fetchESP32Frame();
+    });
   }
 
-  void _processESP32Frame(Uint8List jpegBytes) {
-    if (_isDetecting || !mounted || _plugin == null) return;
+  Future<void> _fetchESP32Frame() async {
+    if (!_useESP32Camera || _isEspPipelineRunning) return;
+    String ip = _esp32Service.espIP.value;
+    if (ip.isEmpty) return;
+
+    try {
+      _isEspPipelineRunning = true;
+      final response = await http.get(Uri.parse('http://$ip/capture')).timeout(const Duration(seconds: 2));
+      
+      if (response.statusCode == 200) {
+        if (mounted) {
+           setState(() {
+             _currentEspFrame = response.bodyBytes;
+           });
+           // Run inference on background to not block UI too much, 
+           // though TFLite usually runs on calling thread unless isolated.
+           // For now simple await.
+           await _runESP32Inference(response.bodyBytes);
+        }
+      }
+    } catch (e) {
+       // print("ESP Fetch Error: $e"); // Silent fail to avoid log spam
+    } finally {
+       _isEspPipelineRunning = false;
+    }
+  }
+
+  Future<void> _runESP32Inference(Uint8List jpegBytes) async {
+    if (_poseDetector == null || _interpreterHand == null) return;
     
-    _frameCounter++;
-    if (_frameCounter % 3 != 0) return; // ESP32 is usually 10-15fps, process every 3rd
-    
-    _isDetecting = true;
-    
-    // In a real app, we'd decode JPEG to CameraImage or use plugin.detectImage if available
-    // For now, we note that ESP32 detection is a FUTURE target or REQUIRES plugin documentation
-    _isDetecting = false; 
-    _debugInfoNotifier.value = "ESP32 Frame Rx (${jpegBytes.length} bytes)";
+    try {
+      // 1. Pose Detection (Wrist)
+      final tempDir = await getTemporaryDirectory();
+      // Optimization: Reuse same file path to avoid disk thrashing? 
+      // OS handles caching, but let's be safe.
+      final file = File('${tempDir.path}/esp_frame.jpg');
+      await file.writeAsBytes(jpegBytes);
+      final inputImage = InputImage.fromFilePath(file.path);
+
+      final poses = await _poseDetector!.processImage(inputImage);
+      if (poses.isEmpty) {
+        _handsNotifier.value = []; 
+        return;
+      }
+
+      // Check wrists
+      final pose = poses.first;
+      final leftWrist = pose.landmarks[PoseLandmarkType.leftWrist];
+      final rightWrist = pose.landmarks[PoseLandmarkType.rightWrist];
+      PoseLandmark? targetWrist;
+      
+      if (leftWrist != null && rightWrist != null) {
+         targetWrist = (leftWrist.likelihood > rightWrist.likelihood) ? leftWrist : rightWrist;
+      } else {
+         targetWrist = leftWrist ?? rightWrist;
+      }
+
+      img.Image? original = img.decodeJpg(jpegBytes);
+      if (original == null) return;
+
+      if (targetWrist != null && targetWrist.likelihood > 0.5) {
+        // 2. Crop
+        double boxSize = 250.0;
+        int cx = targetWrist.x.toInt();
+        int cy = targetWrist.y.toInt();
+        int x = (cx - boxSize / 2).toInt();
+        int y = (cy - boxSize / 2).toInt();
+        int w = boxSize.toInt();
+        int h = boxSize.toInt();
+
+        // Clamp
+        if (x < 0) x = 0; if (y < 0) y = 0;
+        if (x + w > original.width) w = original.width - x;
+        if (y + h > original.height) h = original.height - y;
+        if (w <= 0 || h <= 0) return;
+
+        // Resize
+        img.Image crop = img.copyCrop(original, x: x, y: y, width: w, height: h);
+        img.Image input = img.copyResize(crop, width: 224, height: 224);
+
+        // 3. Hand Inference
+        var inputTensor = _imageToFloat32(input);
+        var outputTensor = List.filled(1 * 63, 0.0).reshape([1, 63]);
+        _interpreterHand!.run(inputTensor, outputTensor);
+
+        // 4. Map & Normalize
+        List<double> handPointsRelative = []; // For TFLite
+        List<double> handPointsGlobal = [];   // For UI
+
+        // MinMax for normalization (Bounding Box logic)
+        double minX = 1000.0, minY = 1000.0;
+        List<double> rawGlobalCoords = [];
+
+        for (int i = 0; i < 21; i++) {
+            double lx = outputTensor[0][i*3];
+            double ly = outputTensor[0][i*3+1];
+            
+            // ROI -> Global Pixel
+            double globalPx = x + (lx * w);
+            double globalPy = y + (ly * h);
+            
+            // Global Pixel -> Screen 0..1
+            handPointsGlobal.add(globalPx / original.width);
+            handPointsGlobal.add(globalPy / original.height);
+            
+            rawGlobalCoords.add(globalPx);
+            rawGlobalCoords.add(globalPy);
+            
+            if(globalPx < minX) minX = globalPx;
+            if(globalPy < minY) minY = globalPy;
+        }
+        
+        // Update UI
+        _handsNotifier.value = [handPointsGlobal];
+        
+        // Normalize for Letters Model
+        for(int i=0; i<rawGlobalCoords.length; i+=2) {
+           handPointsRelative.add(rawGlobalCoords[i] - minX);
+           handPointsRelative.add(rawGlobalCoords[i+1] - minY);
+        }
+        while(handPointsRelative.length < 84) handPointsRelative.add(0.0);
+
+        // 5. Run Classification (Letters/Words)
+        if (currentMode == "LETTRES") {
+           _runInferenceLetters(handPointsRelative);
+        } else {
+           _runInferenceWords(handPointsRelative);
+        }
+
+      } else {
+        _handsNotifier.value = [];
+      }
+    } catch (e) {
+      print("Hybrid Ppl Error: $e");
+    }
+  }
+
+   Object _imageToFloat32(img.Image image) {
+      var input = List.filled(1 * 224 * 224 * 3, 0.0).reshape([1, 224, 224, 3]);
+      for (int y = 0; y < 224; y++) {
+        for (int x = 0; x < 224; x++) {
+          var pixel = image.getPixel(x, y);
+          input[0][y][x][0] = (pixel.r / 255.0);
+          input[0][y][x][1] = (pixel.g / 255.0);
+          input[0][y][x][2] = (pixel.b / 255.0);
+        }
+      }
+      return input;
+  }
+  
+  Widget _buildESP32Stream() {
+    if (_currentEspFrame == null) {
+       return Container(
+         color: Colors.black,
+         child: const Center(child: Column(
+           mainAxisSize: MainAxisSize.min,
+           children: [
+             CircularProgressIndicator(color: Colors.purpleAccent),
+             SizedBox(height: 10),
+             Text("Connexion ESP32...", style: TextStyle(color: Colors.white)),
+           ],
+         )),
+       );
+    }
+    return SizedBox.expand(
+      child: Image.memory(
+        _currentEspFrame!, 
+        gaplessPlayback: true, 
+        fit: BoxFit.cover, // Fill screen
+      ),
+    );
   }
 }
