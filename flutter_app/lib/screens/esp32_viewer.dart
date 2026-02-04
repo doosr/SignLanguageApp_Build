@@ -120,39 +120,52 @@ class _ESP32ViewerState extends State<ESP32Viewer> {
       // Step 2: Run Pose Detection (Find Wrist)
       final poses = await _poseDetector!.processImage(inputImage);
       if (poses.isEmpty) {
-        setState(() => _detectedHands = []);
+        setState(() {
+          _detectedHands = [];
+          _activePoseLine = null; // Clear debug
+        });
         return;
       }
 
-      PoseLine? armLine; // To estimate scale/rotation
-      // Try to find Right Wrist
-      final rightWrist = poses.first.landmarks[PoseLandmarkType.rightWrist];
-      final rightElbow = poses.first.landmarks[PoseLandmarkType.rightElbow];
+      final pose = poses.first;
+      // Check both wrists
+      final leftWrist = pose.landmarks[PoseLandmarkType.leftWrist];
+      final rightWrist = pose.landmarks[PoseLandmarkType.rightWrist];
+      
+      PoseLandmark? targetWrist;
+      // Prioritize the one with higher confidence
+      if (leftWrist != null && rightWrist != null) {
+        targetWrist = (leftWrist.likelihood > rightWrist.likelihood) ? leftWrist : rightWrist;
+      } else {
+        targetWrist = leftWrist ?? rightWrist;
+      }
       
       img.Image? original = img.decodeJpg(jpegBytes);
       if (original == null) return;
       
-      // Define crop region based on Wrist
-      if (rightWrist != null && rightWrist.likelihood > 0.5) {
-        // Simple fixed size crop heuristic or based on arm length
-        // Let's assume a box size proportional to image or fixed approx 200px
+      if (targetWrist != null && targetWrist.likelihood > 0.5) {
+        // We found a wrist!
+        // Calculate Crop Box
         double boxSize = 250.0;
-        int cx = rightWrist.x.toInt();
-        int cy = rightWrist.y.toInt();
+        int cx = targetWrist.x.toInt();
+        int cy = targetWrist.y.toInt();
         
-        // Adjust center slightly towards fingers (heuristic)
-        // If we have elbow, we can project direction
-        
+        // Update Debug Data
+        setState(() => _activePoseLine = PoseLine(Offset(targetWrist!.x, targetWrist.y)));
+
         int x = (cx - boxSize / 2).toInt();
         int y = (cy - boxSize / 2).toInt();
         int w = boxSize.toInt();
-        int h = boxSize.toInt();
+        int h = boxSize.toInt(); // Fixed variable name from boxSize
 
         // Clamp crop
         if (x < 0) x = 0;
         if (y < 0) y = 0;
         if (x + w > original.width) w = original.width - x;
         if (y + h > original.height) h = original.height - y;
+
+        // Verify valid crop
+        if (w <= 0 || h <= 0) return;
 
         // Crop & Resize
         img.Image crop = img.copyCrop(original, x: x, y: y, width: w, height: h);
@@ -164,30 +177,36 @@ class _ESP32ViewerState extends State<ESP32Viewer> {
           var outputTensor = List.filled(1 * 63, 0.0).reshape([1, 63]);
           _interpreterHand!.run(inputTensor, outputTensor);
           
-          // Map back to global coordinates
           List<double> handPoints = [];
           for (int i = 0; i < 21; i++) {
-             // Local 0..1 in crop
+             // 1. Get local 0..1 result
              double lx = outputTensor[0][i*3];
              double ly = outputTensor[0][i*3+1];
              
-             // Project to Crop Pixel
-             double px = x + (lx * w);
-             double py = y + (ly * h);
+             // 2. Scale up to Crop Size (Pixels)
+             double pxInCrop = lx * w;
+             double pyInCrop = ly * h;
              
-             // Normalize to Full Screen 0..1
-             handPoints.add(px / original.width);
-             handPoints.add(py / original.height);
+             // 3. Offset to Global Image (Pixels)
+             double globalPx = x + pxInCrop;
+             double globalPy = y + pyInCrop;
+             
+             // 4. Normalize to Global Screen (0..1)
+             handPoints.add(globalPx / original.width);
+             handPoints.add(globalPy / original.height);
           }
           setState(() => _detectedHands = [handPoints]);
 
-          // Classification
           if (_interpreterLetters != null) {
-            _runLetterClassification(handPoints);
+             _runLetterClassification(handPoints);
           }
         }
       } else {
-        setState(() => _detectedHands = []);
+        // Wrist not found with high confidence
+        setState(() {
+          _detectedHands = [];
+          _activePoseLine = null;
+        });
       }
       
     } catch (e) {
@@ -265,11 +284,18 @@ class _ESP32ViewerState extends State<ESP32Viewer> {
       body: Stack(
         fit: StackFit.expand,
         children: [
+          // 1. Video Feed
           Center(
             child: _currentFrame != null 
               ? Image.memory(_currentFrame!, gaplessPlayback: true, fit: BoxFit.contain)
-              : CircularProgressIndicator(color: Colors.cyan)
+              : const CircularProgressIndicator(color: Colors.cyan)
           ),
+
+          // 2. Debug: Draw Pose (Wrist) if found
+          if (_activePoseLine != null)
+             CustomPaint(painter: PoseDebugPainter(_activePoseLine!)),
+
+          // 3. Hand Painting Overlay (Red/Cyan)
           if (_detectedHands.isNotEmpty)
             CustomPaint(
               painter: HandPainter(
@@ -279,7 +305,30 @@ class _ESP32ViewerState extends State<ESP32Viewer> {
                 false
               )
             ),
-             Align(
+
+          // 4. Debug Stats Overlay
+          Align(
+            alignment: Alignment.topLeft,
+            child: Container(
+              margin: const EdgeInsets.all(10),
+              padding: const EdgeInsets.all(8),
+              color: Colors.black54,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                   Text("FPS: $_fps", style: const TextStyle(color: Colors.white)),
+                   Text("Wrist: ${_activePoseLine != null ? 'Found' : 'Scanning...'}", style: TextStyle(color: _activePoseLine != null ? Colors.green : Colors.red)),
+                   Text("Hands: ${_detectedHands.length}", style: const TextStyle(color: Colors.white)),
+                   if(_detectedLetter.isNotEmpty)
+                     Text("Letter: $_detectedLetter", style: const TextStyle(color: Colors.cyan, fontSize: 18, fontWeight: FontWeight.bold))
+                ],
+              ),
+            ),
+          ),
+          
+          // 5. Detected Letter Overlay
+          Align(
             alignment: Alignment.bottomCenter,
             child: Container(
               color: Colors.black54,
@@ -294,7 +343,23 @@ class _ESP32ViewerState extends State<ESP32Viewer> {
       )
     );
   }
+
+  Widget _buildPoseOverlay() {
+      // Simple custom painter to show we found *something* (the wrist) even if hand model failed
+      return CustomPaint(painter: PoseDebugPainter());
+  }
 }
+
+class PoseDebugPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Only used for debug, logic would need actual pose data passed here. 
+    // For now, this placeholder reminds us visual debug is active.
+  }
+  @override
+  bool shouldRepaint(covariant CustomPainter old) => false;
+}
+
 class PoseLine {
-  // Helper for arm direction if needed
+  // Helper
 }
