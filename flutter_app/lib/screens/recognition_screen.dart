@@ -1423,12 +1423,7 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
         _interpreterHand!.run(inputTensor, outputTensor);
 
         // 4. Map & Normalize
-        List<double> handPointsRelative = []; // For TFLite
-        List<double> handPointsGlobal = [];   // For UI
-
-        // MinMax for normalization (Bounding Box logic)
-        double minX = 1000.0, minY = 1000.0;
-        List<double> rawGlobalCoords = [];
+        List<double> handPointsGlobal = [];   // For UI (0..1 screen relative)
 
         for (int i = 0; i < 21; i++) {
             double lx = outputTensor[0][i*3];
@@ -1441,29 +1436,24 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
             // Global Pixel -> Screen 0..1
             handPointsGlobal.add(globalPx / original.width);
             handPointsGlobal.add(globalPy / original.height);
-            
-            rawGlobalCoords.add(globalPx);
-            rawGlobalCoords.add(globalPy);
-            
-            if(globalPx < minX) minX = globalPx;
-            if(globalPy < minY) minY = globalPy;
         }
         
         // Update UI
         _handsNotifier.value = [handPointsGlobal];
         
-        // Normalize for Letters Model
-        for(int i=0; i<rawGlobalCoords.length; i+=2) {
-           handPointsRelative.add(rawGlobalCoords[i] - minX);
-           handPointsRelative.add(rawGlobalCoords[i+1] - minY);
-        }
-        while(handPointsRelative.length < 84) handPointsRelative.add(0.0);
+        // 5. Run Classification (Letters/Words) via Shared Logic
+        // Construct mock data compatible with the phone pipeline
+        List<Map<String, dynamic>> rawHandsData = [{
+           'landmarks': handPointsGlobal // Already 0..1
+        }];
+        
+        // Use the EXACT same spatial normalization logic as local camera
+        final features = await compute(_processHandLandmarksSpatial, rawHandsData);
 
-        // 5. Run Classification (Letters/Words)
         if (currentMode == "LETTRES") {
-           _runInferenceLetters(handPointsRelative);
+           _runInferenceLetters(features);
         } else {
-           _runInferenceWords(handPointsRelative);
+           _runInferenceWords(features);
         }
 
       } else {
