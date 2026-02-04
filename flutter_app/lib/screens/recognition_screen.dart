@@ -456,42 +456,14 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       _espTimer?.cancel();
     }
     
-    // Use phone camera
-    if (cameras.isEmpty) {
-// ... (Camera Init Logic) ...
-    }
-// ...
-  }
-
-  // ... (keep processCameraImage, etc.) ...
-
-  // BUILD METHOD UPDATES
-  Widget _buildESP32Stream() {
-    if (_currentEspFrame == null) {
-       return Container(
-         color: Colors.black,
-         child: const Center(child: Column(
-           mainAxisSize: MainAxisSize.min,
-           children: [
-             CircularProgressIndicator(color: Colors.purpleAccent),
-             SizedBox(height: 10),
-             Text("Connexion ESP32...", style: TextStyle(color: Colors.white)),
-           ],
-         )),
-       );
-    }
-    return Image.memory(
-      _currentEspFrame!, 
-      gaplessPlayback: true, 
-      fit: BoxFit.cover, // Fill screen
-    );
-  }
-      try {
+    // Use phone camera: Initialize if needed
+    try {
+      if (cameras.isEmpty) {
         cameras = await availableCameras();
-      } catch (e) {
-        print("Camera error: $e");
-        return;
       }
+    } catch (e) {
+      print("Camera error: $e");
+      return;
     }
     
     if (cameras.isEmpty) return;
