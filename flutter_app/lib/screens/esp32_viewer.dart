@@ -1,12 +1,14 @@
 import 'dart:async';
 import 'dart:typed_data';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:image/image.dart' as img; // Needs 'image' package
+import 'package:image/image.dart' as img; 
 import 'package:tflite_flutter/tflite_flutter.dart';
 import 'package:flutter/services.dart';
+import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
+import 'package:path_provider/path_provider.dart';
 import '../widgets/hand_painter.dart';
-import '../main.dart'; // To access shared models/state if needed or duplicate logic
 
 class ESP32Viewer extends StatefulWidget {
   final String ip;
@@ -28,12 +30,13 @@ class _ESP32ViewerState extends State<ESP32Viewer> {
   // ML State
   Interpreter? _interpreterHand;
   Interpreter? _interpreterLetters;
+  PoseDetector? _poseDetector;
+  
   bool _isDetecting = false;
   List<List<double>> _detectedHands = [];
   String _detectedLetter = "";
   List<String> _labelsLetters = [];
   
-  // Buffers for stability
   final List<String> _letterBuffer = [];
 
   @override
@@ -53,27 +56,30 @@ class _ESP32ViewerState extends State<ESP32Viewer> {
 
   Future<void> _loadModels() async {
     try {
-      // 1. Load Hand Landmark Model (Raw TFLite)
-      // Note: User needs to add 'assets/hand_landmark_full.tflite'
+      // 1. Load TFLite Hand Model
       try {
          _interpreterHand = await Interpreter.fromAsset('assets/hand_landmark_full.tflite');
       } catch(e) {
-         print("⚠️ Hand Model missing (normal if not added yet): $e");
+         print("⚠️ Hand Model missing: $e");
       }
 
-      // 2. Load Classification Model (Existing)
+      // 2. Load Classification Model
       _interpreterLetters = await Interpreter.fromAsset('assets/model_letters.tflite');
       String labelsLettersRaw = await rootBundle.loadString('assets/model_letters_labels.txt');
       _labelsLetters = labelsLettersRaw.split('\n').where((s) => s.isNotEmpty).toList();
+
+      // 3. Initialize ML Kit Pose Detector
+      final options = PoseDetectorOptions(mode: PoseDetectionMode.single);
+      _poseDetector = PoseDetector(options: options);
       
-      print("✅ ML Resources Loaded for ESP32");
+      print("✅ Hybrid ML Pipeline Loaded");
     } catch (e) {
       print("❌ ML Init Error: $e");
     }
   }
 
   void _startStream() {
-    _timer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
+    _timer = Timer.periodic(const Duration(milliseconds: 80), (timer) {
       _fetchFrame();
     });
   }
@@ -91,7 +97,7 @@ class _ESP32ViewerState extends State<ESP32Viewer> {
           });
           
           if (!_isDetecting && _currentFrame != null) {
-            _runInference(_currentFrame!);
+            _runHybridPipeline(_currentFrame!);
           }
         }
       }
@@ -100,84 +106,111 @@ class _ESP32ViewerState extends State<ESP32Viewer> {
     }
   }
 
-  Future<void> _runInference(Uint8List jpegBytes) async {
-    if (_interpreterHand == null) return;
+  Future<void> _runHybridPipeline(Uint8List jpegBytes) async {
+    if (_poseDetector == null) return;
     _isDetecting = true;
     
     try {
-      // 1. Preprocessing
-      // Decode JPEG -> Resize to 224x224 (Or whatever the model expects)
+      // Step 1: Write to Temp File for ML Kit
+      final tempDir = await getTemporaryDirectory();
+      final file = await File('${tempDir.path}/frame.jpg').create();
+      await file.writeAsBytes(jpegBytes);
+      final inputImage = InputImage.fromFilePath(file.path);
+
+      // Step 2: Run Pose Detection (Find Wrist)
+      final poses = await _poseDetector!.processImage(inputImage);
+      if (poses.isEmpty) {
+        setState(() => _detectedHands = []);
+        return;
+      }
+
+      PoseLine? armLine; // To estimate scale/rotation
+      // Try to find Right Wrist
+      final rightWrist = poses.first.landmarks[PoseLandmarkType.rightWrist];
+      final rightElbow = poses.first.landmarks[PoseLandmarkType.rightElbow];
+      
       img.Image? original = img.decodeJpg(jpegBytes);
       if (original == null) return;
       
-      // Resize to model input size (assuming standard MediaPipe Hand is 224x224 or 256x256)
-      // Standard TFLite Hand is often 224x224 or 192x192. Let's assume 224.
-      int inputSize = 224; 
-      img.Image resized = img.copyResize(original, width: inputSize, height: inputSize);
+      // Define crop region based on Wrist
+      if (rightWrist != null && rightWrist.likelihood > 0.5) {
+        // Simple fixed size crop heuristic or based on arm length
+        // Let's assume a box size proportional to image or fixed approx 200px
+        double boxSize = 250.0;
+        int cx = rightWrist.x.toInt();
+        int cy = rightWrist.y.toInt();
+        
+        // Adjust center slightly towards fingers (heuristic)
+        // If we have elbow, we can project direction
+        
+        int x = (cx - boxSize / 2).toInt();
+        int y = (cy - boxSize / 2).toInt();
+        int w = boxSize.toInt();
+        int h = boxSize.toInt();
+
+        // Clamp crop
+        if (x < 0) x = 0;
+        if (y < 0) y = 0;
+        if (x + w > original.width) w = original.width - x;
+        if (y + h > original.height) h = original.height - y;
+
+        // Crop & Resize
+        img.Image crop = img.copyCrop(original, x: x, y: y, width: w, height: h);
+        img.Image input = img.copyResize(crop, width: 224, height: 224);
+
+        // Run TFLite Hand Model on Crop
+        if (_interpreterHand != null) {
+          var inputTensor = _imageToFloat32(input);
+          var outputTensor = List.filled(1 * 63, 0.0).reshape([1, 63]);
+          _interpreterHand!.run(inputTensor, outputTensor);
+          
+          // Map back to global coordinates
+          List<double> handPoints = [];
+          for (int i = 0; i < 21; i++) {
+             // Local 0..1 in crop
+             double lx = outputTensor[0][i*3];
+             double ly = outputTensor[0][i*3+1];
+             
+             // Project to Crop Pixel
+             double px = x + (lx * w);
+             double py = y + (ly * h);
+             
+             // Normalize to Full Screen 0..1
+             handPoints.add(px / original.width);
+             handPoints.add(py / original.height);
+          }
+          setState(() => _detectedHands = [handPoints]);
+
+          // Classification
+          if (_interpreterLetters != null) {
+            _runLetterClassification(handPoints);
+          }
+        }
+      } else {
+        setState(() => _detectedHands = []);
+      }
       
-      // Convert to Float32 List [1, 224, 224, 3] Normalized -1..1 or 0..1
-      var input = List.filled(1 * inputSize * inputSize * 3, 0.0).reshape([1, inputSize, inputSize, 3]);
-      for (int y = 0; y < inputSize; y++) {
-        for (int x = 0; x < inputSize; x++) {
-          var pixel = resized.getPixel(x, y);
+    } catch (e) {
+      print("Pipeline Error: $e");
+    } finally {
+      _isDetecting = false;
+    }
+  }
+  
+  Object _imageToFloat32(img.Image image) {
+      var input = List.filled(1 * 224 * 224 * 3, 0.0).reshape([1, 224, 224, 3]);
+      for (int y = 0; y < 224; y++) {
+        for (int x = 0; x < 224; x++) {
+          var pixel = image.getPixel(x, y);
           input[0][y][x][0] = (pixel.r / 255.0);
           input[0][y][x][1] = (pixel.g / 255.0);
           input[0][y][x][2] = (pixel.b / 255.0);
         }
       }
-
-      // 2. Inference (Landmarks)
-      // Output shape depends on model. Usually [1, 63] (21 points * 3 coords) OR [1, 21, 3] etc.
-      // We will safeguard this with try/catch and shape inspection if possible.
-      // For generic purpose, let's assume valid output matching our app needs.
-      var output = List.filled(1 * 63, 0.0).reshape([1, 63]); 
-      
-      _interpreterHand!.run(input, output);
-      
-      // 3. Post-processing
-      // Extract points
-      List<double> rawPoints = [];
-      for(var val in output[0]) rawPoints.add(val as double);
-
-      List<List<double>> hands = [];
-      // Normalize landmarks (0..1) if they aren't already
-      // TFLite output is usually 0..1 or -1..1 relative to input size? 
-      // MediaPipe usually returns pixel coords / inputSize in some modes.
-      
-      // We'll create one hand from these points
-      // Reshape to [x, y, z] tuples?
-      // Our App expects List<double> [x0, y0, x1, y1...] (normalized 0..1)
-      List<double> handPoints = [];
-      for(int i=0; i<21; i++) {
-        // x
-        double x = rawPoints[i*3];
-        // y 
-        double y = rawPoints[i*3+1];
-        // z = rawPoints[i*3+2];
-        
-        // Simple clamp
-        handPoints.add(x.clamp(0.0, 1.0));
-        handPoints.add(y.clamp(0.0, 1.0));
-      }
-      hands.add(handPoints);
-      
-      setState(() => _detectedHands = hands);
-
-      // 4. Gesture Classification (Reuse existing letter model)
-      if (_interpreterLetters != null) {
-        _runLetterClassification(handPoints);
-      }
-
-    } catch (e) {
-      print("Inference Loop Error: $e");
-    } finally {
-      _isDetecting = false;
-    }
+      return input;
   }
 
   void _runLetterClassification(List<double> landmarks) {
-    // Reuse the normalization logic from main.dart
-    // MinX MinY subtraction
     double minX = 1000.0, minY = 1000.0;
     for(int i=0; i<landmarks.length; i+=2) {
       if(landmarks[i] < minX) minX = landmarks[i];
@@ -188,7 +221,7 @@ class _ESP32ViewerState extends State<ESP32Viewer> {
       normalized.add(landmarks[i] - minX);
       normalized.add(landmarks[i+1] - minY);
     }
-    while(normalized.length < 84) normalized.add(0.0); // Padding
+    while(normalized.length < 84) normalized.add(0.0); 
 
     var input = [normalized.sublist(0, 84)];
     var output = List.filled(1, List.filled(_labelsLetters.length, 0.0));
@@ -203,9 +236,8 @@ class _ESP32ViewerState extends State<ESP32Viewer> {
       }
     }
 
-    if (maxProb > 0.5) {
+    if (maxProb > 0.6) {
       String label = _labelsLetters[maxIdx];
-       // Basic stabilization
       _letterBuffer.add(label);
       if(_letterBuffer.length > 5) _letterBuffer.removeAt(0);
       int count = _letterBuffer.where((e) => e == label).length;
@@ -220,8 +252,8 @@ class _ESP32ViewerState extends State<ESP32Viewer> {
     _timer?.cancel();
     _fpsTimer?.cancel();
     _interpreterHand?.close();
-    // _interpreterLetters is shared? No, we loaded new one. Close it.
     _interpreterLetters?.close();
+    _poseDetector?.close();
     super.dispose();
   }
 
@@ -229,7 +261,7 @@ class _ESP32ViewerState extends State<ESP32Viewer> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      appBar: AppBar(title: Text("ESP32 (${widget.ip}) - ${_detectedLetter.isNotEmpty ? _detectedLetter : '...' }")),
+      appBar: AppBar(title: Text("ESP32 (${widget.ip})")),
       body: Stack(
         fit: StackFit.expand,
         children: [
@@ -262,4 +294,7 @@ class _ESP32ViewerState extends State<ESP32Viewer> {
       )
     );
   }
+}
+class PoseLine {
+  // Helper for arm direction if needed
 }
