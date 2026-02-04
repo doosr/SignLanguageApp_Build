@@ -69,6 +69,7 @@ void setupWiFi() {
   }
   
   WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false); // Améliore la stabilité WiFi
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   
   int attempts = 0;
@@ -130,6 +131,8 @@ void setupCamera() {
     config.jpeg_quality = 12;
     config.fb_count = 1;
   }
+  
+  config.grab_mode = CAMERA_GRAB_LATEST; // Réduit la latence du stream
   
   esp_err_t err = esp_camera_init(&config);
   if (err != ESP_OK) {

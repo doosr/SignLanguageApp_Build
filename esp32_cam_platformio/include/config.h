@@ -15,8 +15,8 @@
 #define FRAME_BUFFERS 2                  // 2 buffers pour stream fluide
 
 // ===== LED Configuration =====
-#define LED_PIN 4
-#define LED_ON LOW
+#define LED_PIN 33       // LED Rouge intégrée (GPIO 33). Eviter GPIO 4 (Flash) qui consomme trop.
+#define LED_ON LOW       // GPIO 33 est Active LOW
 #define LED_OFF HIGH
 
 // ===== Debug =====

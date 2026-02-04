@@ -13,6 +13,7 @@
         android:label="sign_language_app"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="true"
         tools:replace="android:label">
         <activity
             android:name=".MainActivity"
