@@ -1201,17 +1201,65 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
     );
   }
 
-  void _processESP32Frame(Uint8List jpegBytes) {
-    if (_isDetecting || !mounted || _plugin == null) return;
+  // Platform Channel for ESP32 Native Detection
+  static const platform = MethodChannel('com.doosr.signlanguageapp/esp32');
+
+  void _processESP32Frame(Uint8List jpegBytes) async {
+    if (_isDetecting || !mounted) return;
     
     _frameCounter++;
-    if (_frameCounter % 3 != 0) return; // ESP32 is usually 10-15fps, process every 3rd
+    if (_frameCounter % 3 != 0) return; // Limit FPS
     
     _isDetecting = true;
     
-    // In a real app, we'd decode JPEG to CameraImage or use plugin.detectImage if available
-    // For now, we note that ESP32 detection is a FUTURE target or REQUIRES plugin documentation
-    _isDetecting = false; 
-    _debugInfoNotifier.value = "ESP32 Frame Rx (${jpegBytes.length} bytes)";
+    try {
+      // Invoke Native Hand Detection
+      final List<dynamic>? result = await platform.invokeMethod('detectFromJpeg', {'bytes': jpegBytes});
+      
+      if (result != null && mounted) {
+           _sensorRotation = 0; // ESP32 is usually fixed/landscape
+           
+           List<Map<String, dynamic>> rawHandsData = [];
+           List<List<double>> uiHands = []; 
+
+           for (var x in result) {
+              // Convert Native result to Dart expected format
+              // Native returns List<Map<String, List<double>>>
+              Map<Object?, Object?> handMap = x as Map<Object?, Object?>;
+              List<dynamic> lmDyn = handMap['landmarks'] as List<dynamic>;
+              List<double> landmarks = lmDyn.cast<double>();
+              
+              uiHands.add(landmarks);
+              rawHandsData.add({
+                'landmarks': landmarks,
+              });
+           }
+           
+           _handsNotifier.value = uiHands;
+
+           if (rawHandsData.isNotEmpty) {
+             _missedFrameCounter = 0;
+             
+             // Run Normalization & Inference (Same pipeline as Phone Camera)
+             final features = await compute(_processHandLandmarksSpatial, rawHandsData);
+             
+             if (currentMode == "LETTRES") {
+                _runInferenceLetters(features);
+             } else {
+                _runInferenceWords(features);
+             }
+           } else {
+             _missedFrameCounter++;
+             if (_missedFrameCounter > 5) {
+                _detectedTextNotifier.value = "En attente...";
+                _sequenceBuffer.clear();
+             }
+           }
+      }
+    } catch (e) {
+      print("ESP32 Detection Error: $e");
+    } finally {
+      if (mounted) _isDetecting = false; 
+    }
   }
 }
