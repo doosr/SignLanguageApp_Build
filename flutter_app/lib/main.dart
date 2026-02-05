@@ -56,7 +56,7 @@ class MyApp extends StatelessWidget {
         '/inverse': (context) => const InverseModeScreen(),
         '/language': (context) => const LanguageSelectionScreen(),
         '/esp32-config': (context) => const ESP32ConfigScreen(),
-        '/esp32-viewer': (context) => const ESP32Viewer(ip: ''), // Placeholder
+        // '/esp32-viewer': Removed (Unified in RecognitionScreen)
       },
     );
   }
