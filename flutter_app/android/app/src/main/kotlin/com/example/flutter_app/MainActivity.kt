@@ -1,7 +1,5 @@
 package com.example.flutter_app
 
-import io.flutter.embedding.android.FlutterActivity
-
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Bundle
