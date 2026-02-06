@@ -79,6 +79,13 @@ static esp_err_t stream_handler(httpd_req_t *req) {
     if (res != ESP_OK) {
       break;
     }
+    
+    // Contrôle du frame rate : ~50ms entre frames = ~20 FPS
+    // Ajuster ce délai pour trouver le bon compromis fluidité/lag
+    // 50ms = 20 FPS (recommandé)
+    // 67ms = 15 FPS (si encore du lag)
+    // 33ms = 30 FPS (si connexion très rapide)
+    delay(50);
   }
   return res;
 }
@@ -86,6 +93,8 @@ static esp_err_t stream_handler(httpd_req_t *req) {
 void startCameraServer() {
   httpd_config_t config = HTTPD_DEFAULT_CONFIG();
   config.server_port = 81;
+  config.stack_size = 4096 * 2; // Augmenter la stack pour meilleur débit
+  config.task_priority = 5;     // Priorité moyenne
 
   httpd_uri_t stream_uri = {
     .uri       = "/stream",
@@ -126,14 +135,17 @@ void setup() {
   config.xclk_freq_hz = 20000000;
   config.pixel_format = PIXFORMAT_JPEG;
   
+  // Optimisations pour réduire le lag
   if (psramFound()) {
-    config.frame_size = FRAMESIZE_VGA;
-    config.jpeg_quality = 12;
-    config.fb_count = 1;
+    config.frame_size = FRAMESIZE_QVGA;  // Résolution plus basse = moins de latence
+    config.jpeg_quality = 15;            // 10-15 = meilleure qualité mais plus fluide que 12
+    config.fb_count = 2;                 // Double buffering pour streaming fluide
+    config.grab_mode = CAMERA_GRAB_LATEST; // Toujours prendre la frame la plus récente
   } else {
-    config.frame_size = FRAMESIZE_SVGA;
-    config.jpeg_quality = 12;
+    config.frame_size = FRAMESIZE_QVGA;
+    config.jpeg_quality = 18;            // Sans PSRAM, qualité légèrement réduite
     config.fb_count = 1;
+    config.grab_mode = CAMERA_GRAB_LATEST;
   }
 
   // Camera init
@@ -143,16 +155,47 @@ void setup() {
     return;
   }
 
+  // Optimisations capteur pour réduire le lag
   sensor_t * s = esp_camera_sensor_get();
-  s->set_framesize(s, FRAMESIZE_QVGA); // Résolution basse pour plus de fluidité
+  s->set_framesize(s, FRAMESIZE_QVGA);   // 320x240 = bon compromis vitesse/qualité
+  s->set_quality(s, 15);                 // Qualité JPEG optimisée
+  
+  // Optimisations d'image pour meilleure reconnaissance
+  s->set_brightness(s, 0);     // -2 à 2
+  s->set_contrast(s, 0);       // -2 à 2
+  s->set_saturation(s, 0);     // -2 à 2
+  s->set_special_effect(s, 0); // 0 = Pas d'effet
+  s->set_whitebal(s, 1);       // White balance auto
+  s->set_awb_gain(s, 1);       // Auto white balance gain
+  s->set_wb_mode(s, 0);        // 0 = Auto
+  s->set_exposure_ctrl(s, 1);  // Auto exposure
+  s->set_aec2(s, 0);           // AEC DSP
+  s->set_ae_level(s, 0);       // -2 à 2
+  s->set_aec_value(s, 300);    // 0 à 1200
+  s->set_gain_ctrl(s, 1);      // Auto gain
+  s->set_agc_gain(s, 0);       // 0 à 30
+  s->set_gainceiling(s, (gainceiling_t)0); // Gain ceiling
+  s->set_bpc(s, 0);            // Black pixel correction
+  s->set_wpc(s, 1);            // White pixel correction
+  s->set_raw_gma(s, 1);        // Gamma correction
+  s->set_lenc(s, 1);           // Lens correction
+  s->set_hmirror(s, 0);        // Miroir horizontal (0 = désactivé)
+  s->set_vflip(s, 0);          // Flip vertical (0 = désactivé)
+  s->set_dcw(s, 1);            // Downsize enable
+  s->set_colorbar(s, 0);       // Test pattern désactivé
 
-  // Connexion Wi-Fi
+  // Optimisations Wi-Fi pour réduire la latence
+  WiFi.mode(WIFI_STA);  // Mode Station uniquement (pas d'AP)
+  WiFi.setSleep(false); // Désactiver le mode économie d'énergie WiFi
+  WiFi.setTxPower(WIFI_POWER_19_5dBm); // Puissance max pour meilleure portée
+  
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
   Serial.println("\nWiFi connected");
+  Serial.printf("Signal Strength (RSSI): %d dBm\n", WiFi.RSSI());
 
   startCameraServer();
 

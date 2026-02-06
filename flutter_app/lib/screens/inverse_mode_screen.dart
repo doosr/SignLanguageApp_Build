@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:translator/translator.dart';  // Google Translator
 import 'dart:async';
 import 'dart:math' as math;
 import '../theme/app_theme.dart';
@@ -15,6 +16,9 @@ class InverseModeScreen extends StatefulWidget {
 
 class _InverseModeScreenState extends State<InverseModeScreen> with TickerProviderStateMixin {
   final stt.SpeechToText _speech = stt.SpeechToText();
+  final GoogleTranslator _translator = GoogleTranslator();  // Google Translate pour lettres manquantes
+  final Map<String, String> _translationCache = {};  // Cache pour éviter requêtes répétées
+  
   bool _isListening = false;
   int _micClickCount = 0;
   String _recognizedText = '';
@@ -199,6 +203,36 @@ class _InverseModeScreenState extends State<InverseModeScreen> with TickerProvid
     }
   }
 
+  /// Traduit une lettre en utilisant Google Translate (avec cache)
+  Future<String> _translateLetter(String letter, String targetLang) async {
+    // Vérifier le cache d'abord
+    String cacheKey = '${letter}_$targetLang';
+    if (_translationCache.containsKey(cacheKey)) {
+      return _translationCache[cacheKey]!;
+    }
+    
+    // Chercher dans le mapping statique
+    String? staticTranslation = _letterToGesture[letter.toUpperCase()]?[targetLang];
+    if (staticTranslation != null) {
+      _translationCache[cacheKey] = staticTranslation;
+      return staticTranslation;
+    }
+    
+    // Utiliser Google Translate comme fallback
+    try {
+      String langCode = _languageCodes[targetLang]?.split('-').first ?? 'en';
+      var translation = await _translator.translate(letter, to: langCode);
+      String result = translation.text;
+      _translationCache[cacheKey] = result;  // Mettre en cache
+      print('✅ Traduction Google: $letter → $result ($targetLang)');
+      return result;
+    } catch (e) {
+      print('❌ Erreur traduction Google: $e');
+      // Fallback: retourner la lettre originale
+      return letter;
+    }
+  }
+
   void _startGestureAnimation() {
     _currentLetterIndex = 0;
     _animationTimer?.cancel();
@@ -228,11 +262,8 @@ class _InverseModeScreenState extends State<InverseModeScreen> with TickerProvid
 
   @override
   Widget build(BuildContext context) {
-    // Keep original letters for image paths, create display letters for UI
+    // Keep original letters for image paths
     final originalLetters = _recognizedText.split('').where((c) => c != ' ').toList();
-    final displayLetters = originalLetters.map((letter) {
-      return _letterToGesture[letter.toUpperCase()]?[_selectedLanguage] ?? letter;
-    }).toList();
     
     return Scaffold(
       body: Container(
@@ -463,75 +494,90 @@ class _InverseModeScreenState extends State<InverseModeScreen> with TickerProvid
                     itemCount: originalLetters.length,
                     itemBuilder: (context, index) {
                       final originalLetter = originalLetters[index];
-                      final displayLetter = displayLetters[index];
                       final isActive = index == _currentLetterIndex;
                       
-                      return AnimatedContainer(
-                        duration: const Duration(milliseconds: 300),
-                        margin: const EdgeInsets.only(right: 12),
-                        width: 100,
-                        decoration: BoxDecoration(
-                          gradient: isActive 
-                            ? LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: [
-                                  Color(0xFF8b5cf6).withOpacity(0.4),
-                                  Color(0xFF6366f1).withOpacity(0.4),
-                                ],
-                              )
-                            : null,
-                          color: isActive ? null : Color(0xFF2a2a4a).withOpacity(0.5),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: isActive 
-                              ? Color(0xFF8b5cf6)
-                              : Colors.white.withOpacity(0.1),
-                            width: isActive ? 2 : 1,
-                          ),
-                          boxShadow: isActive ? [
-                            BoxShadow(
-                              color: Color(0xFF8b5cf6).withOpacity(0.5),
-                              blurRadius: 20,
-                              spreadRadius: 2,
-                            ),
-                          ] : null,
-                        ),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Expanded(
-                              child: ClipRRect(
-                                borderRadius: const BorderRadius.vertical(
-                                  top: Radius.circular(16),
+                      return FutureBuilder<String>(
+                        future: _translateLetter(originalLetter, _selectedLanguage),
+                        builder: (context, snapshot) {
+                          final displayLetter = snapshot.data ?? originalLetter;
+                          
+                          return AnimatedContainer(
+                            duration: const Duration(milliseconds: 300),
+                            margin: const EdgeInsets.only(right: 12),
+                            width: 100,
+                            decoration: BoxDecoration(
+                              gradient: isActive 
+                                ? LinearGradient(
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                    colors: [
+                                      Color(0xFF8b5cf6).withOpacity(0.4),
+                                      Color(0xFF6366f1).withOpacity(0.4),
+                                    ],
+                                  )
+                                : null,
+                              color: isActive ? null : Color(0xFF2a2a4a).withOpacity(0.5),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: isActive 
+                                  ? Color(0xFF8b5cf6)
+                                  : Colors.white.withOpacity(0.1),
+                                width: isActive ? 2 : 1,
+                              ),
+                              boxShadow: isActive ? [
+                                BoxShadow(
+                                  color: Color(0xFF8b5cf6).withOpacity(0.5),
+                                  blurRadius: 20,
+                                  spreadRadius: 2,
                                 ),
-                                child: Image.asset(
-                                  'assets/gestures/${originalLetter.toUpperCase()}_0.jpg',
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (context, error, stackTrace) {
-                                    return Center(
-                                      child: Text(
-                                        '🤟',
-                                        style: TextStyle(fontSize: 50),
+                              ] : null,
+                            ),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Expanded(
+                                  child: ClipRRect(
+                                    borderRadius: const BorderRadius.vertical(
+                                      top: Radius.circular(16),
+                                    ),
+                                    child: Image.asset(
+                                      'assets/gestures/${originalLetter.toUpperCase()}_0.jpg',
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (context, error, stackTrace) {
+                                        return Center(
+                                          child: Text(
+                                            '🤟',
+                                            style: TextStyle(fontSize: 50),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 8),
+                                  child: snapshot.connectionState == ConnectionState.waiting
+                                    ? SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF06b6d4)),
+                                        ),
+                                      )
+                                    : Text(
+                                        displayLetter,
+                                        style: TextStyle(
+                                          color: isActive ? Color(0xFF06b6d4) : Colors.white,
+                                          fontSize: 20,
+                                          fontWeight: FontWeight.bold,
+                                        ),
                                       ),
-                                    );
-                                  },
                                 ),
-                              ),
+                              ],
                             ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(vertical: 8),
-                              child: Text(
-                                displayLetter,
-                                style: TextStyle(
-                                  color: isActive ? Color(0xFF06b6d4) : Colors.white,
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
+                          );
+                        },
                       );
                     },
                   ),
