@@ -101,8 +101,13 @@ class _InverseModeScreenState extends State<InverseModeScreen> with TickerProvid
     bool available = await _speech.initialize();
     if (available) {
       if (mounted) {
-        setState(() => _isListening = true);
+        setState(() {
+          _isListening = true;
+          _recognizedText = '';  // Effacer l'ancien texte
+          _currentLetterIndex = 0;  // Reset l'animation
+        });
         _waveController.repeat();
+        _animationTimer?.cancel();  // Arrêter l'animation en cours
       }
       _speech.listen(
         localeId: _languageCodes[_selectedLanguage],
@@ -136,7 +141,6 @@ class _InverseModeScreenState extends State<InverseModeScreen> with TickerProvid
       if (mounted) {
         setState(() {
           _isListening = false;
-          _micClickCount = 0;
         });
         _waveController.stop();
         
