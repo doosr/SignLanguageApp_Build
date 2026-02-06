@@ -673,10 +673,20 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       return; 
     }
     
+    // Google Translate avec détection automatique de la langue source
     try {
-      var translation = await _translator.translate(phrase, to: _languageCodes[newLang]!);
-      setState(() => phrase = translation.text);
-    } catch (e) {}
+      var translation = await _translator.translate(
+        phrase, 
+        from: 'auto',  // Détection automatique FR/EN/AR
+        to: _languageCodes[newLang]!
+      );
+      setState(() {
+        phrase = translation.text;
+        detectedText = translation.text;
+      });
+    } catch (e) {
+      print('Translation error: $e');
+    }
     _speak();
   }
 

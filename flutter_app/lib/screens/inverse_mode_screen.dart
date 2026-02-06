@@ -20,7 +20,6 @@ class _InverseModeScreenState extends State<InverseModeScreen> with TickerProvid
   final Map<String, String> _translationCache = {};  // Cache pour éviter requêtes répétées
   
   bool _isListening = false;
-  int _micClickCount = 0;
   String _recognizedText = '';
   String _selectedLanguage = 'Français';
   double _speed = 1.0;
@@ -121,16 +120,13 @@ class _InverseModeScreenState extends State<InverseModeScreen> with TickerProvid
   }
 
   void _handleMicClick() {
-    if (_micClickCount == 0) {
+    if (!_isListening) {
+      // Premier clic : démarrer l'écoute
       _resetRecognition();
       _startListening();
-      setState(() => _micClickCount = 1);
-    } else if (_micClickCount == 1) {
-      _startNewPhrase();
-      setState(() => _micClickCount = 2);
     } else {
+      // Deuxième clic : arrêter l'écoute
       _stopListening();
-      setState(() => _micClickCount = 0);
     }
   }
   
