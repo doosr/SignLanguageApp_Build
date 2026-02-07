@@ -26,6 +26,7 @@ class _InverseModeScreenState extends State<InverseModeScreen> with TickerProvid
   
   int _currentLetterIndex = 0;
   Timer? _animationTimer;
+  Timer? _silenceTimer; // Timer for manual silence detection
   
   final Map<String, String> _languageCodes = {
     'Français': 'fr-FR',
@@ -121,16 +122,32 @@ class _InverseModeScreenState extends State<InverseModeScreen> with TickerProvid
               _recognizedText = result.recognizedWords.toUpperCase();
             });
             
-            // Auto-stop when speech is final or user stops speaking
+            // Reset silence timer on every new word detected
+            _startSilenceTimer();
+            
+            // Still check finalResult as a backup
             if (result.finalResult) {
               _stopListening();
             }
           }
         },
         listenMode: stt.ListenMode.confirmation,
-        pauseFor: const Duration(seconds: 2), // Reduce silence detection time
+        pauseFor: const Duration(seconds: 5), // Increased to rely on our manual timer
       );
+      
+      // Start initial silence timer
+      _startSilenceTimer();
     }
+  }
+
+  void _startSilenceTimer() {
+    _silenceTimer?.cancel();
+    _silenceTimer = Timer(const Duration(seconds: 2), () {
+      if (_isListening && mounted) {
+        print("Silence detected, stopping listening...");
+        _stopListening();
+      }
+    });
   }
 
   void _handleMicClick() {
@@ -145,6 +162,7 @@ class _InverseModeScreenState extends State<InverseModeScreen> with TickerProvid
   }
   
   void _stopListening() async {
+    _silenceTimer?.cancel(); // Cancel silence timer
     if (_isListening) {
       await _speech.stop();
       if (mounted) {
@@ -167,6 +185,7 @@ class _InverseModeScreenState extends State<InverseModeScreen> with TickerProvid
       _currentLetterIndex = 0;
     });
     _animationTimer?.cancel();
+    _silenceTimer?.cancel();
     
     // Keep listening if was listening
     if (_isListening) {
@@ -180,13 +199,17 @@ class _InverseModeScreenState extends State<InverseModeScreen> with TickerProvid
               setState(() {
                 _recognizedText = result.recognizedWords.toUpperCase();
               });
+              
+              _startSilenceTimer(); // Reset timer here too
+              
               if (result.finalResult) {
                 _stopListening();
               }
             },
             listenMode: stt.ListenMode.confirmation,
-            pauseFor: const Duration(seconds: 2),
+            pauseFor: const Duration(seconds: 5),
           );
+          _startSilenceTimer(); // Start initial timer
         }
       });
     }
@@ -199,6 +222,7 @@ class _InverseModeScreenState extends State<InverseModeScreen> with TickerProvid
       _currentLetterIndex = 0;
     });
     _animationTimer?.cancel();
+    _silenceTimer?.cancel();
     
     // If already listening, stop and restart for a truly fresh start
     if (_isListening) {
@@ -268,6 +292,7 @@ class _InverseModeScreenState extends State<InverseModeScreen> with TickerProvid
     _pulseController.dispose();
     _glowController.dispose();
     _animationTimer?.cancel();
+    _silenceTimer?.cancel(); // Ensure timer is disposed
     _speech.stop();
     super.dispose();
   }
