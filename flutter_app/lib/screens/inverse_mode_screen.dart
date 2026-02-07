@@ -428,40 +428,7 @@ class _InverseModeScreenState extends State<InverseModeScreen> with TickerProvid
                 ],
               ),
               
-              const SizedBox(height: 30),
-
-              // Control Buttons Row
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  if (_isListening)
-                    ElevatedButton.icon(
-                      onPressed: _stopListening,
-                      icon: const Icon(Icons.stop),
-                      label: const Text("Arrêter"),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.redAccent,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                      ),
-                    )
-                  else ...[
-                    // Bouton Écouter (si pas de texte) ou Nouvelle Écoute (si texte)
-                    ElevatedButton.icon(
-                      onPressed: _startNewPhrase,
-                      icon: Icon(_recognizedText.isEmpty ? Icons.mic : Icons.refresh),
-                      label: Text(_recognizedText.isEmpty ? "Écouter" : "Nouvelle écoute"),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _recognizedText.isEmpty ? Color(0xFF6366f1) : Color(0xFF06b6d4),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
+              
               
               const SizedBox(height: 30),
               
