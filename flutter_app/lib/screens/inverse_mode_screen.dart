@@ -120,10 +120,15 @@ class _InverseModeScreenState extends State<InverseModeScreen> with TickerProvid
             setState(() {
               _recognizedText = result.recognizedWords.toUpperCase();
             });
+            
+            // Auto-stop when speech is final or user stops speaking
+            if (result.finalResult) {
+              _stopListening();
+            }
           }
         },
         listenMode: stt.ListenMode.confirmation,
-        pauseFor: const Duration(seconds: 3),
+        pauseFor: const Duration(seconds: 2), // Reduce silence detection time
       );
     }
   }
@@ -175,9 +180,12 @@ class _InverseModeScreenState extends State<InverseModeScreen> with TickerProvid
               setState(() {
                 _recognizedText = result.recognizedWords.toUpperCase();
               });
+              if (result.finalResult) {
+                _stopListening();
+              }
             },
             listenMode: stt.ListenMode.confirmation,
-            pauseFor: const Duration(seconds: 3),
+            pauseFor: const Duration(seconds: 2),
           );
         }
       });
