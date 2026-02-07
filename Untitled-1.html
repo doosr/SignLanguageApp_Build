@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Diagramme de Cas d'Utilisation - Application SignLanguage</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+
+        .container {
+            max-width: 1800px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 24px;
+            color: #333;
+        }
+
+        svg {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        .actor {
+            font-size: 12px;
+            text-anchor: middle;
+        }
+
+        .actor-name {
+            font-weight: bold;
+            font-size: 11px;
+        }
+
+        .system-boundary {
+            fill: none;
+            stroke: #000;
+            stroke-width: 2.5;
+        }
+
+        .package {
+            fill: #f8f8f8;
+            stroke: #000;
+            stroke-width: 2;
+        }
+
+        .package-title {
+            font-size: 14px;
+            font-weight: bold;
+            text-anchor: middle;
+        }
+
+        .usecase {
+            fill: white;
+            stroke: #000;
+            stroke-width: 2;
+        }
+
+        .usecase-text {
+            font-size: 10px;
+            text-anchor: middle;
+        }
+
+        .relation {
+            fill: none;
+            stroke: #000;
+            stroke-width: 2;
+        }
+
+        .relation-dashed {
+            fill: none;
+            stroke: #000;
+            stroke-width: 2;
+            stroke-dasharray: 6, 3;
+        }
+
+        .relation-label {
+            font-size: 10px;
+            font-style: italic;
+            fill: #000;
+        }
+
+        .arrow {
+            fill: none;
+            stroke: #000;
+            stroke-width: 2;
+        }
+
+        .arrow-fill {
+            fill: #000;
+        }
+
+        .stickman {
+            stroke: #000;
+            stroke-width: 2.5;
+            fill: none;
+        }
+
+        .camera-icon,
+        .hand-icon {
+            stroke: #000;
+            stroke-width: 2;
+            fill: none;
+        }
+
+        .ai-icon {
+            fill: #000;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>Diagramme de Cas d'Utilisation - Application SignLanguage</h1>
+
+        <svg viewBox="0 0 1700 1200" xmlns="http://www.w3.org/2000/svg">
+
+            <!-- Bordure principale de l'application -->
+            <rect x="200" y="60" width="1300" height="1050" class="system-boundary" rx="8" />
+            <text x="850" y="90" class="package-title">Application SignLanguage</text>
+
+            <!-- ========== MODE RECONNAISSANCE (PERSONNE SOURDE) ========== -->
+            <rect x="230" y="120" width="580" height="450" class="package" rx="5" />
+            <text x="520" y="145" class="package-title">Mode Reconnaissance</text>
+
+            <!-- UC1: Reconnaître gestes → texte -->
+            <ellipse cx="400" cy="230" rx="110" ry="50" class="usecase" />
+            <text x="400" y="225" class="usecase-text">Reconnaître</text>
+            <text x="400" y="240" class="usecase-text">gestes → texte</text>
+
+            <!-- UC2: Reconnaître gestes → parole -->
+            <ellipse cx="640" cy="230" rx="110" ry="50" class="usecase" />
+            <text x="640" y="225" class="usecase-text">Reconnaître</text>
+            <text x="640" y="240" class="usecase-text">gestes → parole</text>
+
+            <!-- UC3: Choisir mode -->
+            <ellipse cx="300" cy="370" rx="90" ry="45" class="usecase" />
+            <text x="300" y="365" class="usecase-text">Choisir mode</text>
+            <text x="300" y="380" class="usecase-text">🔤 Lettres / 💬 Mots</text>
+
+            <!-- UC4: Choisir langue -->
+            <ellipse cx="520" cy="370" rx="100" ry="45" class="usecase" />
+            <text x="520" y="365" class="usecase-text">Choisir langue</text>
+            <text x="520" y="380" class="usecase-text">FR / EN / AR</text>
+
+            <!-- UC5: Configurer ESP32-CAM -->
+            <ellipse cx="710" cy="370" rx="90" ry="45" class="usecase" />
+            <text x="710" y="365" class="usecase-text">Configurer</text>
+            <text x="710" y="380" class="usecase-text">ESP32-CAM</text>
+
+            <!-- Services inclus -->
+            <ellipse cx="380" cy="490" rx="95" ry="40" class="usecase" />
+            <text x="380" y="485" class="usecase-text">Traduire geste</text>
+            <text x="380" y="500" class="usecase-text">en texte</text>
+
+            <ellipse cx="620" cy="490" rx="95" ry="40" class="usecase" />
+            <text x="620" y="485" class="usecase-text">Synthétiser</text>
+            <text x="620" y="500" class="usecase-text">parole (TTS)</text>
+
+            <!-- ========== MODE INVERSE (PERSONNE ENTENDANTE) ========== -->
+            <rect x="870" y="120" width="580" height="450" class="package" rx="5" />
+            <text x="1160" y="145" class="package-title">Mode Inverse</text>
+
+            <!-- UC6: Parler → gestes -->
+            <ellipse cx="1160" cy="230" rx="110" ry="50" class="usecase" />
+            <text x="1160" y="225" class="usecase-text">Parler → gestes</text>
+            <text x="1160" y="240" class="usecase-text">(Mode Inverse)</text>
+
+            <!-- UC7: Visualiser séquence -->
+            <ellipse cx="1000" cy="370" rx="95" ry="45" class="usecase" />
+            <text x="1000" y="365" class="usecase-text">Visualiser</text>
+            <text x="1000" y="380" class="usecase-text">séquence (156)</text>
+
+            <!-- UC8: Traduire lettres -->
+            <ellipse cx="1320" cy="370" rx="100" ry="45" class="usecase" />
+            <text x="1320" y="365" class="usecase-text">Traduire lettres</text>
+            <text x="1320" y="380" class="usecase-text">en langue cible</text>
+
+            <!-- Services Mode Inverse -->
+            <ellipse cx="1000" cy="490" rx="95" ry="40" class="usecase" />
+            <text x="1000" y="485" class="usecase-text">Reconnaître voix</text>
+            <text x="1000" y="500" class="usecase-text">(STT)</text>
+
+            <ellipse cx="1280" cy="490" rx="100" ry="40" class="usecase" />
+            <text x="1280" y="485" class="usecase-text">Afficher gestes</text>
+            <text x="1280" y="500" class="usecase-text">correspondants</text>
+
+            <!-- ========== SERVICES ESP32-CAM ========== -->
+            <rect x="230" y="620" width="580" height="220" class="package" rx="5" />
+            <text x="520" y="645" class="package-title">Services ESP32-CAM</text>
+
+            <!-- UC9: Détecter landmarks -->
+            <ellipse cx="320" cy="720" rx="95" ry="45" class="usecase" />
+            <text x="320" y="715" class="usecase-text">Détecter landmarks</text>
+            <text x="320" y="730" class="usecase-text">(21 points)</text>
+
+            <!-- UC10: Capturer vidéo -->
+            <ellipse cx="520" cy="720" rx="90" ry="45" class="usecase" />
+            <text x="520" y="715" class="usecase-text">Capturer vidéo</text>
+            <text x="520" y="730" class="usecase-text">(WiFi MJPEG)</text>
+
+            <!-- UC11: Streamer temps réel -->
+            <ellipse cx="720" cy="720" rx="90" ry="45" class="usecase" />
+            <text x="720" y="715" class="usecase-text">Streamer</text>
+            <text x="720" y="730" class="usecase-text">temps réel 30FPS</text>
+
+            <!-- ========== SERVICES SYSTÈME IA ========== -->
+            <rect x="870" y="620" width="580" height="460" class="package" rx="5" />
+            <text x="1160" y="645" class="package-title">Services Système IA</text>
+
+            <!-- Ligne 1 -->
+            <ellipse cx="950" cy="720" rx="90" ry="45" class="usecase" />
+            <text x="950" y="715" class="usecase-text">Effectuer inférence</text>
+            <text x="950" y="730" class="usecase-text">(TFLiteModel)</text>
+
+            <ellipse cx="1160" cy="720" rx="90" ry="45" class="usecase" />
+            <text x="1160" y="715" class="usecase-text">Normaliser</text>
+            <text x="1160" y="730" class="usecase-text">aspect ratio</text>
+
+            <ellipse cx="1370" cy="720" rx="90" ry="45" class="usecase" />
+            <text x="1370" y="715" class="usecase-text">Appliquer seuil</text>
+            <text x="1370" y="730" class="usecase-text">(0.7 / 0.75)</text>
+
+            <!-- Ligne 2 -->
+            <ellipse cx="950" cy="850" rx="95" ry="45" class="usecase" />
+            <text x="950" y="845" class="usecase-text">Traduire auto</text>
+            <text x="950" y="860" class="usecase-text">(GoogleAPI)</text>
+
+            <ellipse cx="1160" cy="850" rx="95" ry="45" class="usecase" />
+            <text x="1160" y="845" class="usecase-text">Synthétiser</text>
+            <text x="1160" y="860" class="usecase-text">parole (TTS)</text>
+
+            <ellipse cx="1370" cy="850" rx="95" ry="45" class="usecase" />
+            <text x="1370" y="845" class="usecase-text">Reconnaître voix</text>
+            <text x="1370" y="860" class="usecase-text">(STT)</text>
+
+            <!-- Ligne 3 -->
+            <ellipse cx="1160" cy="990" rx="110" ry="50" class="usecase" />
+            <text x="1160" y="980" class="usecase-text">Gérer modèles ML</text>
+            <text x="1160" y="995" class="usecase-text">26 lettres / 10 mots</text>
+            <text x="1160" y="1010" class="usecase-text">/ LSTM</text>
+
+            <!-- ========== RELATIONS <<INCLUDE>> MODE RECONNAISSANCE ========== -->
+
+            <!-- UC1 include UC3 (Choisir mode) -->
+            <line x1="360" y1="270" x2="330" y2="330" class="relation-dashed" />
+            <polygon points="330,330 335,322 325,325" class="arrow-fill" />
+            <text x="335" y="295" class="relation-label">&lt;&lt;include&gt;&gt;</text>
+
+            <!-- UC1 include Traduire geste en texte -->
+            <line x1="390" y1="280" x2="385" y2="450" class="relation-dashed" />
+            <polygon points="385,450 390,442 380,445" class="arrow-fill" />
+            <text x="395" y="370" class="relation-label">&lt;&lt;include&gt;&gt;</text>
+
+            <!-- UC2 include Synthétiser parole -->
+            <line x1="630" y1="280" x2="620" y2="450" class="relation-dashed" />
+            <polygon points="620,450 625,442 615,445" class="arrow-fill" />
+            <text x="632" y="370" class="relation-label">&lt;&lt;include&gt;&gt;</text>
+
+            <!-- UC2 include UC4 (Choisir langue) -->
+            <line x1="600" y1="270" x2="550" y2="330" class="relation-dashed" />
+            <polygon points="550,330 558,325 552,335" class="arrow-fill" />
+            <text x="570" y="295" class="relation-label">&lt;&lt;include&gt;&gt;</text>
+
+            <!-- Traduire geste include Détecter landmarks -->
+            <line x1="350" y1="530" x2="320" y2="675" class="relation-dashed" />
+            <polygon points="320,675 325,667 315,670" class="arrow-fill" />
+            <text x="332" y="605" class="relation-label">&lt;&lt;include&gt;&gt;</text>
+
+            <!-- ========== RELATIONS <<INCLUDE>> MODE INVERSE ========== -->
+
+            <!-- UC6 include Reconnaître voix -->
+            <line x1="1120" y1="270" x2="1040" y2="455" class="relation-dashed" />
+            <polygon points="1040,455 1048,450 1042,460" class="arrow-fill" />
+            <text x="1070" y="370" class="relation-label">&lt;&lt;include&gt;&gt;</text>
+
+            <!-- UC6 include UC7 (Visualiser) -->
+            <line x1="1120" y1="270" x2="1040" y2="340" class="relation-dashed" />
+            <polygon points="1040,340 1048,335 1042,345" class="arrow-fill" />
+            <text x="1070" y="300" class="relation-label">&lt;&lt;include&gt;&gt;</text>
+
+            <!-- UC6 include UC8 (Traduire lettres) -->
+            <line x1="1200" y1="270" x2="1280" y2="335" class="relation-dashed" />
+            <polygon points="1280,335 1273,330 1277,340" class="arrow-fill" />
+            <text x="1245" y="295" class="relation-label">&lt;&lt;include&gt;&gt;</text>
+
+            <!-- Reconnaître voix include STT du système IA -->
+            <line x1="1030" y1="525" x2="1210" y2="815" class="relation-dashed" />
+            <polygon points="1210,815 1202,810 1205,820" class="arrow-fill" />
+            <text x="1125" y="675" class="relation-label">&lt;&lt;include&gt;&gt;</text>
+
+            <!-- ========== RELATIONS <<INCLUDE>> SYSTÈME IA ========== -->
+
+            <!-- Effectuer inférence include Normaliser -->
+            <line x1="1040" y1="720" x2="1070" y2="720" class="relation-dashed" />
+            <polygon points="1070,720 1062,715 1065,725" class="arrow-fill" />
+            <text x="1045" y="710" class="relation-label">&lt;&lt;include&gt;&gt;</text>
+
+            <!-- Effectuer inférence include Appliquer seuil -->
+            <line x1="1010" y1="750" x2="1310" y2="750" class="relation-dashed" />
+            <polygon points="1310,750 1302,745 1305,755" class="arrow-fill" />
+            <text x="1150" y="740" class="relation-label">&lt;&lt;include&gt;&gt;</text>
+
+            <!-- Effectuer inférence include Gérer modèles -->
+            <line x1="990" y1="760" x2="1100" y2="950" class="relation-dashed" />
+            <polygon points="1100,950 1107,943 1098,948" class="arrow-fill" />
+            <text x="1030" y="860" class="relation-label">&lt;&lt;include&gt;&gt;</text>
+
+            <!-- Traduire auto include Gérer modèles -->
+            <line x1="1000" y1="890" x2="1090" y2="960" class="relation-dashed" />
+            <polygon points="1090,960 1097,953 1088,958" class="arrow-fill" />
+            <text x="1030" y="930" class="relation-label">&lt;&lt;include&gt;&gt;</text>
+
+            <!-- Synthétiser parole (Mode Reco) include TTS (IA) -->
+            <line x1="690" y1="520" x2="1070" y2="820" class="relation-dashed" />
+            <polygon points="1070,820 1062,815 1065,825" class="arrow-fill" />
+            <text x="880" y="680" class="relation-label">&lt;&lt;include&gt;&gt;</text>
+
+            <!-- ========== RELATIONS <<EXTEND>> ========== -->
+
+            <!-- Capturer vidéo extend Streamer -->
+            <line x1="610" y1="720" x2="630" y2="720" class="relation-dashed" />
+            <polygon points="630,720 622,715 625,725" class="arrow-fill" />
+            <text x="612" y="710" class="relation-label">&lt;&lt;extend&gt;&gt;</text>
+
+            <!-- Configurer ESP32 extend Capturer vidéo -->
+            <line x1="680" y1="415" x2="540" y2="680" class="relation-dashed" />
+            <polygon points="540,680 547,675 540,685" class="arrow-fill" />
+            <text x="605" y="550" class="relation-label">&lt;&lt;extend&gt;&gt;</text>
+
+            <!-- Visualiser extend Afficher gestes -->
+            <line x1="1090" y1="395" x2="1200" y2="465" class="relation-dashed" />
+            <polygon points="1200,465 1192,462 1195,472" class="arrow-fill" />
+            <text x="1135" y="425" class="relation-label">&lt;&lt;extend&gt;&gt;</text>
+
+            <!-- ========== ACTEURS ========== -->
+
+            <!-- Acteur: Personne Sourde avec icône main -->
+            <g class="actor">
+                <!-- Stick figure -->
+                <circle cx="90" cy="300" r="18" class="stickman" />
+                <line x1="90" y1="318" x2="90" y2="370" class="stickman" />
+                <line x1="90" y1="335" x2="60" y2="360" class="stickman" />
+                <line x1="90" y1="335" x2="120" y2="360" class="stickman" />
+                <line x1="90" y1="370" x2="65" y2="410" class="stickman" />
+                <line x1="90" y1="370" x2="115" y2="410" class="stickman" />
+
+                <!-- Icône langue des signes (image) -->
+                <image href="SOURDE.png" x="30" y="240" width="60" height="60" />
+
+
+                <text x="90" y="435" class="actor-name">:Personne Sourde:</text>
+            </g>
+
+            <!-- Acteur: Personne Entendante -->
+            <g class="actor">
+                <circle cx="1590" cy="300" r="18" class="stickman" />
+                <line x1="1590" y1="318" x2="1590" y2="370" class="stickman" />
+                <line x1="1590" y1="335" x2="1560" y2="360" class="stickman" />
+                <line x1="1590" y1="335" x2="1620" y2="360" class="stickman" />
+                <line x1="1590" y1="370" x2="1565" y2="410" class="stickman" />
+                <line x1="1590" y1="370" x2="1615" y2="410" class="stickman" />
+
+                <!-- Speech bubble -->
+                <path
+                    d="M 1550 250 Q 1550 238 1562 238 L 1618 238 Q 1630 238 1630 250 L 1630 275 Q 1630 287 1618 287 L 1575 287 L 1568 298 L 1572 287 L 1562 287 Q 1550 287 1550 275 Z"
+                    fill="white" stroke="#000" stroke-width="2" />
+                <line x1="1558" y1="248" x2="1572" y2="248" stroke="#000" stroke-width="2" />
+                <line x1="1558" y1="260" x2="1622" y2="260" stroke="#000" stroke-width="2" />
+                <line x1="1558" y1="272" x2="1610" y2="272" stroke="#000" stroke-width="2" />
+
+                <text x="1590" y="440" class="actor-name">:Personne Entendante:</text>
+            </g>
+
+            <!-- Acteur: ESP32-CAM -->
+            <g class="actor">
+                <rect x="50" y="740" width="70" height="55" rx="8" class="camera-icon" />
+                <circle cx="75" cy="767" r="15" class="camera-icon" />
+                <rect x="105" y="747" width="12" height="10" class="camera-icon" />
+                <path d="M 85 722 Q 85 715 92 715 L 105 715 Q 112 715 112 722 L 112 735 L 85 735 Z"
+                    class="camera-icon" />
+
+                <!-- WiFi symbol -->
+                <path d="M 85 705 Q 78 698 70 698 Q 62 698 55 705" stroke="#000" stroke-width="2" fill="none" />
+                <path d="M 81 710 Q 77 706 70 706 Q 63 706 59 710" stroke="#000" stroke-width="2" fill="none" />
+                <circle cx="70" cy="714" r="2" fill="#000" />
+
+                <text x="85" y="825" class="actor-name">:ESP32-CAM:</text>
+            </g>
+
+            <!-- Acteur: Système IA -->
+            <g class="actor">
+                <circle cx="1590" cy="860" r="35" fill="white" stroke="#000" stroke-width="2.5" />
+                <!-- Brain pattern -->
+                <path d="M 1565 845 Q 1573 837 1582 845 Q 1590 853 1582 861 Q 1573 869 1565 861 Z" class="ai-icon" />
+                <path d="M 1598 845 Q 1606 837 1615 845 Q 1606 853 1598 861 Q 1590 853 1598 845 Z" class="ai-icon" />
+                <circle cx="1572" cy="872" r="4" class="ai-icon" />
+                <circle cx="1590" cy="877" r="4" class="ai-icon" />
+                <circle cx="1608" cy="872" r="4" class="ai-icon" />
+                <!-- Neural connections -->
+                <line x1="1572" y1="850" x2="1590" y2="840" stroke="#000" stroke-width="1" />
+                <line x1="1590" y1="840" x2="1608" y2="850" stroke="#000" stroke-width="1" />
+                <line x1="1572" y1="872" x2="1590" y2="877" stroke="#000" stroke-width="1" />
+                <line x1="1590" y1="877" x2="1608" y2="872" stroke="#000" stroke-width="1" />
+
+                <text x="1590" y="925" class="actor-name">:Système IA:</text>
+            </g>
+
+            <!-- ========== RELATIONS ACTEURS VERS CAS D'UTILISATION ========== -->
+
+            <!-- Personne Sourde → Cas d'utilisation -->
+            <line x1="120" y1="270" x2="290" y2="210" class="relation" />
+            <polygon points="290,210 282,213 285,206" class="arrow-fill" />
+
+            <line x1="120" y1="285" x2="530" y2="210" class="relation" />
+            <polygon points="530,210 522,213 525,206" class="arrow-fill" />
+
+            <line x1="120" y1="320" x2="245" y2="345" class="relation" />
+            <polygon points="245,345 237,348 240,341" class="arrow-fill" />
+
+            <line x1="120" y1="335" x2="430" y2="350" class="relation" />
+            <polygon points="430,350 422,353 425,346" class="arrow-fill" />
+
+            <line x1="120" y1="350" x2="620" y2="360" class="relation" />
+            <polygon points="620,360 612,363 615,356" class="arrow-fill" />
+
+            <!-- Personne Entendante → Cas d'utilisation -->
+            <line x1="1560" y1="270" x2="1270" y2="210" class="relation" />
+            <polygon points="1270,210 1278,206 1275,213" class="arrow-fill" />
+
+            <line x1="1560" y1="320" x2="1095" y2="360" class="relation" />
+            <polygon points="1095,360 1103,356 1100,363" class="arrow-fill" />
+
+            <line x1="1560" y1="340" x2="1420" y2="360" class="relation" />
+            <polygon points="1420,360 1428,356 1425,363" class="arrow-fill" />
+
+            <!-- ESP32-CAM → Services -->
+            <line x1="120" y1="750" x2="230" y2="710" class="relation" />
+            <polygon points="230,710 222,713 225,706" class="arrow-fill" />
+
+            <line x1="120" y1="770" x2="435" y2="735" class="relation" />
+            <polygon points="435,735 427,738 430,731" class="arrow-fill" />
+
+            <line x1="120" y1="780" x2="635" y2="745" class="relation" />
+            <polygon points="635,745 627,748 630,741" class="arrow-fill" />
+
+            <!-- Système IA → Services IA -->
+            <line x1="1555" y1="850" x2="1465" y2="850" class="relation" />
+            <polygon points="1465,850 1473,846 1470,853" class="arrow-fill" />
+
+            <line x1="1560" y1="830" x2="1450" y2="745" class="relation" />
+            <polygon points="1450,745 1458,741 1455,748" class="arrow-fill" />
+
+            <line x1="1555" y1="880" x2="1270" y2="970" class="relation" />
+            <polygon points="1270,970 1278,966 1275,973" class="arrow-fill" />
+
+        </svg>
+    </div>
+</body>
+
+</html>
