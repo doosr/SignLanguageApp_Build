@@ -151,6 +151,7 @@ class _InverseModeScreenState extends State<InverseModeScreen> with TickerProvid
   }
 
   void _handleMicClick() {
+    print("Mic Clicked. Listening state: $_isListening");
     if (!_isListening) {
       // Premier clic : démarrer l'écoute
       _resetRecognition();
@@ -161,22 +162,24 @@ class _InverseModeScreenState extends State<InverseModeScreen> with TickerProvid
     }
   }
   
-  void _stopListening() async {
-    _silenceTimer?.cancel(); // Cancel silence timer
-    if (_isListening) {
-      await _speech.stop();
-      if (mounted) {
-        setState(() {
-          _isListening = false;
-        });
-        _waveController.stop();
-        
-        // Start animation if text exists
-        if (_recognizedText.isNotEmpty) {
-          _startGestureAnimation();
-        }
+  void _stopListening() {
+    _silenceTimer?.cancel(); // Cancel silence timer immediately
+    
+    // Update UI immediately to show stopped state
+    if (mounted) {
+      setState(() {
+        _isListening = false;
+      });
+      _waveController.stop();
+      
+      // Start animation if text exists
+      if (_recognizedText.isNotEmpty) {
+        _startGestureAnimation();
       }
     }
+    
+    // Stop speech engine asynchronously
+    _speech.stop();
   }
   
   void _resetRecognition() {
