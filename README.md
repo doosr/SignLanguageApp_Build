@@ -22,7 +22,6 @@ L'application dispose désormais de **5 écrans modernes** avec un design glassm
 4. **Sélection de langue** - 🇫🇷 Français, 🇬🇧 English, 🇹🇳 العربية
 5. **Configuration ESP32-CAM** - Caméra distante
 
-![Interfaces](interface_screenshots/Figure_23_Home_Screen.png)
 
 ### 🔤 Mode Reconnaissance (Gestes → Texte/Parole)
 
