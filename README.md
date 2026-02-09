@@ -39,6 +39,7 @@ L'application dispose désormais de **5 écrans modernes** avec un design glassm
 ### 💬 Mode Inverse (Voix/Texte → Gestes)
 
 - ✅ **Reconnaissance vocale (STT)** multilingue
+- ✅ **Génération IA & Web** : Recherche d'images (Google) et génération par IA (Pollinations.ai) si le geste est manquant localement
 - ✅ **Affichage séquentiel** des gestes correspondants
 - ✅ **Animation lettre par lettre** avec images des gestes
 - ✅ **Contrôle de vitesse** : Lent (2s), Normal (1s), Rapide (0.5s)
@@ -85,7 +86,7 @@ L'application dispose désormais de **5 écrans modernes** avec un design glassm
 
 - **MediaPipe Hands**: Détection de 21 landmarks de la main
 - **TensorFlow Lite**: Modèles d'IA on-device
-  - CNN pour lettres (90.3% précision)
+  - MLP (Deep Dense) pour lettres (90.3% précision)
   - LSTM pour mots (78.5% précision)
 - **Hand Landmarker Plugin**: Intégration Flutter
 
@@ -171,7 +172,7 @@ graph TB
 
 ### Cas d'Utilisation
 
-![Diagramme Cas d'Utilisation](rapport_images/diagramme_cas_utilisation.png)
+![Diagramme Cas d'Utilisation](Diagram/diagram_cas_utilisation.png)
 
 **Acteurs principaux** :
 
@@ -222,7 +223,7 @@ sequenceDiagram
     end
 ```
 
-![Diagramme Séquence Reconnaissance](rapport_images/diagramme_sequence_reconnaissance.png)
+![Diagramme Séquence Reconnaissance](Diagram/diagram_flux_reconnaissance.png)
 
 ### Diagramme de Séquence - Mode Inverse
 
@@ -259,11 +260,11 @@ sequenceDiagram
     IS->>U: Animation complète
 ```
 
-![Diagramme Séquence Mode Inverse](rapport_images/diagramme_sequence_mode_inverse.png)
+![Diagramme Séquence Mode Inverse](Diagram/diagram_flux_inverse.png)
 
 ### Diagramme de Classes
 
-![Diagramme de Classes](rapport_images/diagramme_classes.png)
+![Diagramme de Classes](Diagram/diagram_class.png)
 
 **Classes principales** :
 
@@ -322,7 +323,7 @@ classDiagram
 
 ### Architecture On-Device
 
-![Architecture On-Device](rapport_images/architecture_on_device.png)
+![Architecture On-Device](Diagram/diagram_architecture.png)
 
 **Pipeline de traitement** :
 
@@ -412,9 +413,11 @@ python create_dataset.py
 ### 2. Entraîner les Modèles
 
 ```bash
-python train_classifier.py
-# Génère: model_letters.tflite (90.3% précision)
-#         model_words.tflite (78.5% précision)
+# Entraînement Lettres (PRO)
+python train_letters_pro.py
+
+# Entraînement Mots (Séquences LSTM)
+python train_lstm_final.py
 ```
 
 ### 3. Tester l'Inférence
@@ -452,18 +455,15 @@ SignLanguageApp_Build/
 │   │   └── gestures/              # Images A-Z
 │   ├── android/                   # Configuration Android
 │   └── pubspec.yaml               # Dépendances
-├── esp32_cam/                     # Firmware ESP32-CAM
-│   └── esp32_cam_stream.ino
+├── esp32_cam_platformio/          # Firmware ESP32-CAM (PlatformIO)
+│   └── src/main.cpp
 ├── interface_screenshots/         # Mockups des écrans
-│   ├── Figure_23_Home_Screen.png
-│   ├── Figure_24_Recognition_Mode.png
-│   ├── Figure_25_Inverse_Mode.png
-│   ├── Figure_26_Language_Selection.png
-│   └── Figure_27_ESP32_Config.png
 ├── create_dataset.py              # Collecte de données
-├── train_classifier.py            # Entraînement modèles
+├── train_letters_pro.py           # Entraînement lettres (PRO)
+├── train_lstm_final.py            # Entraînement mots (LSTM)
+├── speech_to_image_model.py       # Moteur IA (Mode Inverse)
+├── speech_to_gesture.py           # Reconnaissance vocale
 ├── inference_classifier.py        # Test lettres
-├── inference_sequence.py          # Test mots
 ├── INTERFACE_MODERNE.md           # Documentation UI
 └── README.md
 ```
