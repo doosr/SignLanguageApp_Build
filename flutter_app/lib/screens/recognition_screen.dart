@@ -646,16 +646,22 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
     if (now.difference(_lastGestureTime).inMilliseconds < 1500) return;
     _lastGestureTime = now;
 
-    String translated = gestureKey;
-    String targetLang = _selectedLanguage;
-
+    bool foundLocal = false;
     if (currentMode == "LETTRES") {
-      translated = _translationsLetters[gestureKey.toUpperCase()]?[targetLang] ?? gestureKey;
+      var entry = _translationsLetters[gestureKey.toUpperCase()];
+      if (entry != null && entry.containsKey(targetLang)) {
+        translated = entry[targetLang]!;
+        foundLocal = true;
+      }
     } else {
-      translated = _translationsWords[gestureKey.toUpperCase()]?[targetLang] ?? gestureKey;
+      var entry = _translationsWords[gestureKey.toUpperCase()];
+      if (entry != null && entry.containsKey(targetLang)) {
+        translated = entry[targetLang]!;
+        foundLocal = true;
+      }
     }
 
-    if (translated == gestureKey && targetLang != "Français") {
+    if (!foundLocal && targetLang != "Français") {
        try {
          // Fallback to Google Translator for unknown keys
          var gTrans = await _translator.translate(gestureKey, to: _languageCodes[targetLang]!);
@@ -850,30 +856,8 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
                     borderRadius: BorderRadius.circular(24),
                     child: Stack(
                       children: [
-                        // Camera Stream
-                        _useESP32Camera 
-                             ? _buildESP32Stream() 
-                             : CameraPreview(_controller!),
-                        
-                        // Hand Landmarks Overlay
-                        Positioned.fill(
-                          child: ValueListenableBuilder<List<List<double>>>(
-                            valueListenable: _handsNotifier,
-                            builder: (context, currentHands, _) {
-                              if (currentHands.isEmpty) return const SizedBox.shrink();
-                              return RepaintBoundary(
-                                child: CustomPaint(
-                                  painter: HandPainter(
-                                    currentHands,
-                                    _useESP32Camera ? const Size(640, 480) : _controller!.value.previewSize!,
-                                    _sensorRotation,
-                                    _useESP32Camera ? false : isFrontCamera
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                        ),
+                        // Unified Camera and Landmarks Display
+                        _buildCameraStreamWithOverlay(isFrontCamera),
 
                         // Large Glassmorphic Letter Overlay (Bottom Center of Camera)
                         Align(
@@ -1182,6 +1166,54 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
           _buildMiniButton(Icons.settings, Colors.grey, () => Navigator.pushNamed(context, '/esp32-config')),
         ],
       ),
+    );
+  }
+
+  Widget _buildCameraStreamWithOverlay(bool isFrontCamera) {
+    // Determine the base size of the camera frame for aspect ratio calculation
+    double width = 640;
+    double height = 480;
+    
+    if (!_useESP32Camera && _controller != null && _controller!.value.isInitialized) {
+      // In portrait, the long side is height in the metadata
+      width = _controller!.value.previewSize!.height; 
+      height = _controller!.value.previewSize!.width;
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            // 1. Camera Preview with guaranteed coverage
+            FittedBox(
+              fit: BoxFit.cover,
+              clipBehavior: Clip.hardEdge,
+              child: SizedBox(
+                width: width,
+                height: height,
+                child: _useESP32Camera ? _buildESP32Stream() : CameraPreview(_controller!),
+              ),
+            ),
+            
+            // 2. Hand Landmarks Overlay
+            ValueListenableBuilder<List<List<double>>>(
+              valueListenable: _handsNotifier,
+              builder: (context, currentHands, _) {
+                if (currentHands.isEmpty) return const SizedBox.shrink();
+                return CustomPaint(
+                  painter: HandPainter(
+                    currentHands,
+                    Size(width, height),
+                    _sensorRotation,
+                    _useESP32Camera ? false : isFrontCamera,
+                  ),
+                );
+              },
+            ),
+          ],
+        );
+      }
     );
   }
 
