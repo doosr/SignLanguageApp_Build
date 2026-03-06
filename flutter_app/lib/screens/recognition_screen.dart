@@ -1,5 +1,4 @@
 import 'dart:ui';
-import 'dart:convert';
 import '../widgets/mjpeg_widget.dart';
 import '../widgets/blinking_dot.dart';
 import 'package:flutter/material.dart';
@@ -186,9 +185,6 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
     await Future.delayed(const Duration(milliseconds: 50));
 
     try {
-      // Load translations from JSON
-      await _loadTranslations();
-      
       // Load language preference
       final prefs = await SharedPreferences.getInstance();
       _selectedLanguage = prefs.getString('language') ?? 'Français';
@@ -222,47 +218,6 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
           _isInitializing = false;
         });
       }
-    }
-  }
-
-  Future<void> _loadTranslations() async {
-    try {
-      final String jsonString = await rootBundle.loadString('assets/translations.json');
-      final Map<String, dynamic> jsonData = json.decode(jsonString);
-      
-      Map<String, String> appToCode = {
-        "Français": "fr",
-        "Anglais": "en",
-        "Arabe": "ar"
-      };
-
-      jsonData.forEach((key, value) {
-        String upperKey = key.toUpperCase();
-        Map<String, dynamic> transData = value as Map<String, dynamic>;
-        
-        // Populate Letters or Words based on key length or structure (assume single char = letter)
-        if (key.length == 1) {
-          _translationsLetters[upperKey] = {};
-          appToCode.forEach((appName, code) {
-            if (transData.containsKey(code)) {
-              _translationsLetters[upperKey]![appName] = transData[code];
-            }
-          });
-        } else {
-          _translationsWords[upperKey] = {};
-          appToCode.forEach((appName, code) {
-            if (transData.containsKey(code)) {
-              _translationsWords[upperKey]![appName] = transData[code];
-            }
-          });
-          if (transData.containsKey('emoji')) {
-            _translationsWords[upperKey]!['emoji'] = transData['emoji'];
-          }
-        }
-      });
-      print("✅ Dynamic translations loaded from JSON");
-    } catch (e) {
-      print("❌ Error loading translations JSON: $e");
     }
   }
 
@@ -646,7 +601,10 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
     if (now.difference(_lastGestureTime).inMilliseconds < 1500) return;
     _lastGestureTime = now;
 
+    String translated = gestureKey;
+    String targetLang = _selectedLanguage;
     bool foundLocal = false;
+
     if (currentMode == "LETTRES") {
       var entry = _translationsLetters[gestureKey.toUpperCase()];
       if (entry != null && entry.containsKey(targetLang)) {
@@ -661,9 +619,8 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       }
     }
 
-    if (!foundLocal && targetLang != "Français") {
+    if (!foundLocal && targetLang != "Français" && targetLang != "Anglais") {
        try {
-         // Fallback to Google Translator for unknown keys
          var gTrans = await _translator.translate(gestureKey, to: _languageCodes[targetLang]!);
          translated = gTrans.text;
        } catch (e) {
@@ -848,16 +805,14 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
                 ),
               ),
 
-              // 2. Camera Preview (Expanded)
+              // 2. Camera Display (Enlarged)
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(24),
-                    child: Stack(
-                      children: [
-                        // Unified Camera and Landmarks Display
-                        _buildCameraStreamWithOverlay(isFrontCamera),
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      _buildCameraDisplay(isFrontCamera),
 
                         // Large Glassmorphic Letter Overlay (Bottom Center of Camera)
                         Align(
@@ -1169,51 +1124,43 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
     );
   }
 
-  Widget _buildCameraStreamWithOverlay(bool isFrontCamera) {
-    // Determine the base size of the camera frame for aspect ratio calculation
+  Widget _buildCameraDisplay(bool isFrontCamera) {
     double width = 640;
     double height = 480;
     
     if (!_useESP32Camera && _controller != null && _controller!.value.isInitialized) {
-      // In portrait, the long side is height in the metadata
       width = _controller!.value.previewSize!.height; 
       height = _controller!.value.previewSize!.width;
     }
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return Stack(
-          fit: StackFit.expand,
+    return FittedBox(
+      fit: BoxFit.cover,
+      clipBehavior: Clip.hardEdge,
+      child: SizedBox(
+        width: width,
+        height: height,
+        child: Stack(
           children: [
-            // 1. Camera Preview with guaranteed coverage
-            FittedBox(
-              fit: BoxFit.cover,
-              clipBehavior: Clip.hardEdge,
-              child: SizedBox(
-                width: width,
-                height: height,
-                child: _useESP32Camera ? _buildESP32Stream() : CameraPreview(_controller!),
+            _useESP32Camera ? _buildESP32Stream() : CameraPreview(_controller!),
+            Positioned.fill(
+              child: ValueListenableBuilder<List<List<double>>>(
+                valueListenable: _handsNotifier,
+                builder: (context, currentHands, _) {
+                  if (currentHands.isEmpty) return const SizedBox.shrink();
+                  return CustomPaint(
+                    painter: HandPainter(
+                      currentHands,
+                      Size(width, height),
+                      _sensorRotation,
+                      _useESP32Camera ? false : isFrontCamera,
+                    ),
+                  );
+                },
               ),
             ),
-            
-            // 2. Hand Landmarks Overlay
-            ValueListenableBuilder<List<List<double>>>(
-              valueListenable: _handsNotifier,
-              builder: (context, currentHands, _) {
-                if (currentHands.isEmpty) return const SizedBox.shrink();
-                return CustomPaint(
-                  painter: HandPainter(
-                    currentHands,
-                    Size(width, height),
-                    _sensorRotation,
-                    _useESP32Camera ? false : isFrontCamera,
-                  ),
-                );
-              },
-            ),
           ],
-        );
-      }
+        ),
+      ),
     );
   }
 
