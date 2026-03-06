@@ -72,6 +72,8 @@ flutter:
     - assets/model_words_labels.txt
     - assets/hand_landmarker.task
     - assets/hand_landmark_full.tflite
+    - assets/translations.json
+
 
 # Configuration MSIX pour installateur Windows professionnel
 msix_config:
