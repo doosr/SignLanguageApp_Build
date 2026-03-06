@@ -1,4 +1,5 @@
 import 'dart:ui';
+import 'dart:convert';
 import '../widgets/mjpeg_widget.dart';
 import '../widgets/blinking_dot.dart';
 import 'package:flutter/material.dart';
@@ -185,6 +186,9 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
     await Future.delayed(const Duration(milliseconds: 50));
 
     try {
+      // Load translations from JSON
+      await _loadTranslations();
+      
       // Load language preference
       final prefs = await SharedPreferences.getInstance();
       _selectedLanguage = prefs.getString('language') ?? 'Français';
@@ -221,6 +225,47 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
     }
   }
 
+  Future<void> _loadTranslations() async {
+    try {
+      final String jsonString = await rootBundle.loadString('assets/translations.json');
+      final Map<String, dynamic> jsonData = json.decode(jsonString);
+      
+      Map<String, String> appToCode = {
+        "Français": "fr",
+        "Anglais": "en",
+        "Arabe": "ar"
+      };
+
+      jsonData.forEach((key, value) {
+        String upperKey = key.toUpperCase();
+        Map<String, dynamic> transData = value as Map<String, dynamic>;
+        
+        // Populate Letters or Words based on key length or structure (assume single char = letter)
+        if (key.length == 1) {
+          _translationsLetters[upperKey] = {};
+          appToCode.forEach((appName, code) {
+            if (transData.containsKey(code)) {
+              _translationsLetters[upperKey]![appName] = transData[code];
+            }
+          });
+        } else {
+          _translationsWords[upperKey] = {};
+          appToCode.forEach((appName, code) {
+            if (transData.containsKey(code)) {
+              _translationsWords[upperKey]![appName] = transData[code];
+            }
+          });
+          if (transData.containsKey('emoji')) {
+            _translationsWords[upperKey]!['emoji'] = transData['emoji'];
+          }
+        }
+      });
+      print("✅ Dynamic translations loaded from JSON");
+    } catch (e) {
+      print("❌ Error loading translations JSON: $e");
+    }
+  }
+
   Future<void> _initPlugin() async {
     try {
       // Note: hand_landmarker plugin downloads model if not found.
@@ -237,7 +282,10 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
   }
 
   Future<void> _requestPermissions() async {
-    await [Permission.camera, Permission.microphone].request();
+    // Mobile platforms require explicit permission requests
+    if (Platform.isAndroid || Platform.isIOS) {
+      await [Permission.camera, Permission.microphone].request();
+    }
   }
 
   Future<void> _loadModels() async {
@@ -607,11 +655,14 @@ class _RecognitionScreenState extends State<RecognitionScreen> {
       translated = _translationsWords[gestureKey.toUpperCase()]?[targetLang] ?? gestureKey;
     }
 
-    if (translated == gestureKey && targetLang != "Français" && targetLang != "Anglais") {
+    if (translated == gestureKey && targetLang != "Français") {
        try {
+         // Fallback to Google Translator for unknown keys
          var gTrans = await _translator.translate(gestureKey, to: _languageCodes[targetLang]!);
          translated = gTrans.text;
-       } catch (e) {}
+       } catch (e) {
+         print("Translation fallback error: $e");
+       }
     }
 
     if (!mounted) return;
